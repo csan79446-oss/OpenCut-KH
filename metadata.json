@@ -1,0 +1,11 @@
+{
+  "name": "OpenCut Studio - AI Video Editor (CapCut Desktop)",
+  "description": "Desktop-grade CapCut and AutoCut inspired video editor featuring multi-track timeline, AI silence cutting, auto-subtitles, transcript-based editing, filters, and high-fidelity video rendering.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
