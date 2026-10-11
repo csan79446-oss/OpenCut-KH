@@ -121,12 +121,12 @@ export const INITIAL_TRACKS: TimelineTrack[] = [
   },
   {
     id: 'track-a2',
-    name: 'A2 Sound Effects',
+    name: 'A2 Voiceover & SFX',
     type: 'sfx',
     isMuted: false,
     isLocked: false,
     isVisible: true,
-    volume: 0.9,
+    volume: 1,
   },
 ];
 

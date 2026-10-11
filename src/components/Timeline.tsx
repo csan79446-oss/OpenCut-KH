@@ -13,6 +13,8 @@ import {
   Lock,
   Unlock,
   Plus,
+  Play,
+  Pause,
   Video,
   Music,
   Type,
@@ -26,6 +28,8 @@ import {
   ChevronRight,
   MoreVertical,
   Radio,
+  Link,
+  Layers,
 } from 'lucide-react';
 import { TimelineClip, TimelineTrack, TrackType } from '../types/editor';
 import { Language, translations } from '../utils/i18n';
@@ -53,6 +57,19 @@ interface TimelineProps {
   onMoveTrackUp?: (trackId: string) => void;
   onMoveTrackDown?: (trackId: string) => void;
   onClearTrackClips?: (trackId: string) => void;
+  onFinishClipDrag?: (
+    clipId: string,
+    finalStart: number,
+    finalDuration: number,
+    targetTrackId?: string
+  ) => void;
+  onFinishClipTrim?: () => void;
+  isAutoConnect?: boolean;
+  onToggleAutoConnect?: () => void;
+  onCloseGaps?: (trackId?: string) => void;
+  onSplitAllTracks?: (time: number) => void;
+  isPlaying?: boolean;
+  onTogglePlay?: () => void;
   language: Language;
 }
 
@@ -60,6 +77,21 @@ interface ContextMenuState {
   x: number;
   y: number;
   clipId: string;
+}
+
+interface ClipDragState {
+  clipId: string;
+  trackId: string;
+  targetTrackId?: string;
+  type: 'move' | 'trim-left' | 'trim-right';
+  startX: number;
+  initialStart: number;
+  initialDuration: number;
+  currentDeltaX: number;
+  currentStart: number;
+  currentDuration: number;
+  dropInsertX?: number;
+  snapGuideX?: number;
 }
 
 export const Timeline: React.FC<TimelineProps> = ({
@@ -85,6 +117,14 @@ export const Timeline: React.FC<TimelineProps> = ({
   onMoveTrackUp,
   onMoveTrackDown,
   onClearTrackClips,
+  onFinishClipDrag,
+  onFinishClipTrim,
+  isAutoConnect = true,
+  onToggleAutoConnect,
+  onCloseGaps,
+  onSplitAllTracks,
+  isPlaying = false,
+  onTogglePlay,
   language,
 }) => {
   const t = translations[language];
@@ -104,13 +144,7 @@ export const Timeline: React.FC<TimelineProps> = ({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   // Dragging state for clips
-  const [dragState, setDragState] = useState<{
-    clipId: string;
-    type: 'move' | 'trim-left' | 'trim-right';
-    startX: number;
-    initialStart: number;
-    initialDuration: number;
-  } | null>(null);
+  const [dragState, setDragState] = useState<ClipDragState | null>(null);
 
   const timelineWidth = Math.max(1400, (totalDuration + 8) * zoom);
 
@@ -154,17 +188,122 @@ export const Timeline: React.FC<TimelineProps> = ({
         updateTimeFromEvent(e);
       } else if (dragState) {
         const deltaX = e.clientX - dragState.startX;
-        if (Math.abs(deltaX) > 3) {
+        if (Math.abs(deltaX) > 2) {
           hasDraggedRef.current = true;
         }
         const deltaSeconds = deltaX / zoom;
 
-        if (dragState.type === 'move') {
-          let newStart = Math.max(0, dragState.initialStart + deltaSeconds);
-          if (isSnapping && Math.abs(newStart - currentTime) < 0.25) {
-            newStart = currentTime;
+        // Auto-scroll timeline container if dragging near horizontal edges
+        if (containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const trackHeaderWidth = 224; // 224px (w-56)
+          const rightDist = containerRect.right - e.clientX;
+          const leftDist = e.clientX - (containerRect.left + trackHeaderWidth);
+
+          if (rightDist < 50 && rightDist > -30) {
+            containerRef.current.scrollLeft += 12;
+          } else if (leftDist < 50 && leftDist > -30) {
+            containerRef.current.scrollLeft -= 12;
           }
-          onUpdateClipTiming(dragState.clipId, Math.round(newStart * 100) / 100, dragState.initialDuration);
+        }
+
+        // Detect track hovered vertically (allows dragging clips between compatible tracks)
+        let targetTrackId = dragState.targetTrackId || dragState.trackId;
+        if (containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const rulerHeight = 28;
+          const trackHeight = 44;
+          const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop - rulerHeight;
+          const hoveredIndex = Math.floor(relativeY / trackHeight);
+          if (hoveredIndex >= 0 && hoveredIndex < tracks.length) {
+            const candidateTrack = tracks[hoveredIndex];
+            const sourceTrack = tracks.find((t) => t.id === dragState.trackId);
+            if (sourceTrack && candidateTrack && !candidateTrack.isLocked) {
+              const isVideoGroup = (t: TrackType) => t === 'video' || t === 'overlay';
+              const isAudioGroup = (t: TrackType) => t === 'audio' || t === 'sfx';
+              if (
+                (isVideoGroup(sourceTrack.type) && isVideoGroup(candidateTrack.type)) ||
+                (isAudioGroup(sourceTrack.type) && isAudioGroup(candidateTrack.type)) ||
+                sourceTrack.type === candidateTrack.type
+              ) {
+                targetTrackId = candidateTrack.id;
+              }
+            }
+          }
+        }
+
+        if (dragState.type === 'move') {
+          let tentativeStart = Math.max(0, dragState.initialStart + deltaSeconds);
+          let snapGuideX: number | undefined = undefined;
+
+          const otherClips = clips
+            .filter((c) => c.trackId === targetTrackId && c.id !== dragState.clipId)
+            .sort((a, b) => a.start - b.start);
+
+          if (isSnapping) {
+            // Snap to 0s
+            if (Math.abs(tentativeStart) < 0.2) {
+              tentativeStart = 0;
+              snapGuideX = 0;
+            }
+            // Snap to playhead
+            else if (Math.abs(tentativeStart - currentTime) < 0.2) {
+              tentativeStart = currentTime;
+              snapGuideX = currentTime * zoom;
+            } else {
+              // Snap to neighbor clip edges
+              for (const c of otherClips) {
+                if (Math.abs(tentativeStart - (c.start + c.duration)) < 0.2) {
+                  tentativeStart = c.start + c.duration;
+                  snapGuideX = (c.start + c.duration) * zoom;
+                  break;
+                }
+                if (Math.abs(tentativeStart + dragState.initialDuration - c.start) < 0.2) {
+                  tentativeStart = Math.max(0, c.start - dragState.initialDuration);
+                  snapGuideX = c.start * zoom;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Calculate drop insertion line if in magnetic video track mode
+          let dropInsertX: number | undefined = undefined;
+          const currentTrack = tracks.find((t) => t.id === targetTrackId);
+          const isMagneticTrack = isAutoConnect && currentTrack?.type === 'video';
+
+          if (isMagneticTrack && otherClips.length > 0) {
+            const dragCenter = tentativeStart + dragState.initialDuration / 2;
+            let insertIdx = otherClips.length;
+            for (let i = 0; i < otherClips.length; i++) {
+              const c = otherClips[i];
+              const mid = c.start + c.duration / 2;
+              // Check center or leading edge threshold so dragging left or right reorders immediately
+              if (dragCenter < mid || tentativeStart < c.start + c.duration * 0.35) {
+                insertIdx = i;
+                break;
+              }
+            }
+            if (insertIdx === 0) {
+              dropInsertX = 0;
+            } else {
+              const prev = otherClips[insertIdx - 1];
+              dropInsertX = (prev.start + prev.duration) * zoom;
+            }
+          }
+
+          setDragState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  targetTrackId,
+                  currentDeltaX: deltaX,
+                  currentStart: Math.round(tentativeStart * 100) / 100,
+                  dropInsertX,
+                  snapGuideX,
+                }
+              : null
+          );
         } else if (dragState.type === 'trim-left') {
           const newStart = Math.max(0, dragState.initialStart + deltaSeconds);
           const newDuration = Math.max(0.3, dragState.initialDuration - deltaSeconds);
@@ -178,6 +317,28 @@ export const Timeline: React.FC<TimelineProps> = ({
 
     const handleMouseUp = () => {
       isDraggingPlayhead.current = false;
+      if (dragState && hasDraggedRef.current) {
+        if (dragState.type === 'move') {
+          if (onFinishClipDrag) {
+            onFinishClipDrag(
+              dragState.clipId,
+              dragState.currentStart,
+              dragState.currentDuration,
+              dragState.targetTrackId || dragState.trackId
+            );
+          } else {
+            onUpdateClipTiming(
+              dragState.clipId,
+              dragState.currentStart,
+              dragState.currentDuration
+            );
+          }
+        } else if (dragState.type === 'trim-left' || dragState.type === 'trim-right') {
+          if (onFinishClipTrim) {
+            onFinishClipTrim();
+          }
+        }
+      }
       setDragState(null);
     };
 
@@ -187,7 +348,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState, zoom, currentTime, isSnapping, totalDuration]);
+  }, [dragState, zoom, currentTime, isSnapping, isAutoConnect, totalDuration, clips, tracks, onFinishClipDrag, onFinishClipTrim, onUpdateClipTiming]);
 
   // Clip drag starters
   const startClipDrag = (e: React.MouseEvent, clip: TimelineClip, type: 'move' | 'trim-left' | 'trim-right') => {
@@ -201,10 +362,15 @@ export const Timeline: React.FC<TimelineProps> = ({
     onSelectClip(clip.id);
     setDragState({
       clipId: clip.id,
+      trackId: clip.trackId,
+      targetTrackId: clip.trackId,
       type,
       startX: e.clientX,
       initialStart: clip.start,
       initialDuration: clip.duration,
+      currentDeltaX: 0,
+      currentStart: clip.start,
+      currentDuration: clip.duration,
     });
   };
 
@@ -243,8 +409,28 @@ export const Timeline: React.FC<TimelineProps> = ({
     <div className="h-72 bg-[#10111a] border-t border-[#20212f] flex flex-col select-none relative">
       {/* 1. Timeline Toolbar with CapCut 3 Split Actions */}
       <div className="h-10 bg-[#141522] border-b border-[#20212f] px-3 flex items-center justify-between z-20">
-        {/* Left tools: CapCut Split 3 Options + Delete + Duplicate */}
-        <div className="flex items-center space-x-1.5">
+        {/* Left tools: Play / Pause + CapCut Split Options + Delete + Auto-Connect */}
+        <div className="flex items-center space-x-1.5 flex-wrap">
+          {/* Quick Timeline Play / Pause Button */}
+          {onTogglePlay && (
+            <button
+              onClick={onTogglePlay}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-bold border transition cursor-pointer shadow-sm mr-1 ${
+                isPlaying
+                  ? 'bg-cyan-600 hover:bg-cyan-500 text-white border-cyan-400'
+                  : 'bg-[#192236] hover:bg-cyan-600/40 text-cyan-300 border-cyan-500/40'
+              }`}
+              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            >
+              {isPlaying ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+              )}
+              <span>{isPlaying ? 'Pause' : 'Play'}</span>
+            </button>
+          )}
+
           {/* CapCut Split Action 1: Split at playhead (Ctrl+B / C) */}
           <button
             onClick={() => {
@@ -262,6 +448,21 @@ export const Timeline: React.FC<TimelineProps> = ({
             <span>{language === 'km' ? 'កាត់ពុះ' : 'Split'}</span>
             <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-cyan-300 bg-cyan-950/70 border border-cyan-800/60' : 'text-gray-600 bg-gray-900/40'}`}>Ctrl+B</span>
           </button>
+
+          {/* CapCut Split All Tracks at playhead (Ctrl+Shift+B) */}
+          {onSplitAllTracks && (
+            <button
+              onClick={() => onSplitAllTracks(currentTime)}
+              className="flex items-center space-x-1 px-2 py-1 rounded text-xs font-semibold border transition bg-[#162033] hover:bg-cyan-700/40 text-cyan-300 border-cyan-600/40 hover:border-cyan-400 active:scale-95 cursor-pointer shadow-sm"
+              title={`${t.splitAllTracks} [Ctrl+Shift+B]`}
+            >
+              <Layers className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{language === 'km' ? 'កាត់គ្រប់ Track' : 'Split All'}</span>
+              <span className="text-[10px] font-mono px-1 rounded ml-0.5 text-cyan-300 bg-cyan-950/70 border border-cyan-800/60 hidden sm:inline">
+                Ctrl+Shift+B
+              </span>
+            </button>
+          )}
 
           {/* CapCut Split Action 2: Split & Delete Left (Q) */}
           <button
@@ -307,21 +508,21 @@ export const Timeline: React.FC<TimelineProps> = ({
 
           <div className="h-4 w-px bg-[#26283d] mx-1" />
 
-          {/* Delete Clip */}
+          {/* Delete Clip (with Auto-Connect / Snap indicator) */}
           <button
             onClick={() => {
               if (activeClip) onDeleteClip(activeClip.id);
             }}
             disabled={!activeClip}
-            className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition border ${
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs transition border font-semibold ${
               activeClip
                 ? 'bg-[#2b1720] hover:bg-rose-500/30 text-rose-300 border-rose-500/40 hover:border-rose-400 cursor-pointer shadow-sm'
                 : 'text-gray-700 border-transparent cursor-not-allowed'
             }`}
-            title={t.deleteClip}
+            title={isAutoConnect ? t.deleteAndConnect : t.deleteClip}
           >
             <Trash2 className={`w-3.5 h-3.5 ${activeClip ? 'text-rose-400' : 'text-gray-700'}`} />
-            <span>{language === 'km' ? 'លុប' : 'Delete'}</span>
+            <span>{isAutoConnect ? (language === 'km' ? 'លុប & ភ្ជាប់' : 'Del & Snap') : (language === 'km' ? 'លុប' : 'Delete')}</span>
             <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${activeClip ? 'text-rose-300 bg-rose-950/60' : 'text-gray-700'}`}>Del</span>
           </button>
 
@@ -343,18 +544,34 @@ export const Timeline: React.FC<TimelineProps> = ({
 
           <div className="h-4 w-px bg-[#26283d] mx-1" />
 
-          {/* Magnet / Snapping Toggle */}
-          <button
-            onClick={() => setIsSnapping(!isSnapping)}
-            className={`p-1.5 rounded flex items-center space-x-1 text-xs transition ${
-              isSnapping
-                ? 'bg-cyan-600/20 text-cyan-400 border border-cyan-500/30'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-            title={t.snapToClips}
-          >
-            <Magnet className="w-3.5 h-3.5" />
-          </button>
+          {/* Auto-Connect / Magnetic Ripple Toggle */}
+          {onToggleAutoConnect && (
+            <button
+              onClick={onToggleAutoConnect}
+              className={`px-2 py-1 rounded flex items-center space-x-1.5 text-xs font-semibold transition border cursor-pointer ${
+                isAutoConnect
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50 shadow-sm shadow-cyan-950 hover:bg-cyan-500/30'
+                  : 'bg-transparent text-gray-500 border-gray-700 hover:text-gray-300'
+              }`}
+              title={t.autoConnect}
+            >
+              <Link className={`w-3.5 h-3.5 ${isAutoConnect ? 'text-cyan-400' : 'text-gray-500'}`} />
+              <span>{language === 'km' ? 'ភ្ជាប់ស្វ័យប្រវត្តិ' : 'Auto-Connect'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isAutoConnect ? 'bg-cyan-400 animate-pulse' : 'bg-gray-600'}`} />
+            </button>
+          )}
+
+          {/* Close Gaps / Snap All Clips Button */}
+          {onCloseGaps && (
+            <button
+              onClick={() => onCloseGaps()}
+              className="px-2 py-1 rounded flex items-center space-x-1 text-xs font-medium text-gray-300 hover:text-white bg-[#1a1c2b] hover:bg-[#25283c] border border-[#2b2d42] transition cursor-pointer"
+              title={t.closeAllGaps}
+            >
+              <Magnet className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden md:inline">{language === 'km' ? 'ភ្ជាប់ចន្លោះទទេ' : 'Close Gaps'}</span>
+            </button>
+          )}
         </div>
 
         {/* Right tools: Zoom */}
@@ -604,6 +821,20 @@ export const Timeline: React.FC<TimelineProps> = ({
                   {track.isMuted ? <VolumeX className="w-3 h-3 text-rose-400" /> : <Volume2 className="w-3 h-3" />}
                 </button>
 
+                {/* Connect / Close Gaps in Track */}
+                {onCloseGaps && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseGaps(track.id);
+                    }}
+                    className="p-1 rounded hover:bg-[#25283c] text-cyan-400 hover:text-cyan-300 transition"
+                    title={language === 'km' ? 'ភ្ជាប់ Clips ក្នុង Track នេះ' : 'Connect clips in this track'}
+                  >
+                    <Link className="w-3 h-3" />
+                  </button>
+                )}
+
                 {/* Delete Track Button (No alert / confirm!) */}
                 <button
                   onClick={(e) => {
@@ -655,8 +886,21 @@ export const Timeline: React.FC<TimelineProps> = ({
 
           {/* 2. Track Lanes with Clips */}
           <div className="flex-1 relative flex flex-col">
+            {/* Global Magnetic Snap Line across tracks */}
+            {dragState && dragState.snapGuideX !== undefined && (
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 shadow-[0_0_12px_#22d3ee] z-40 pointer-events-none"
+                style={{ left: `${dragState.snapGuideX}px` }}
+              >
+                <div className="w-2.5 h-2.5 bg-cyan-400 rotate-45 -translate-x-1/2 -mt-1 shadow-md shadow-cyan-400" />
+              </div>
+            )}
+
             {tracks.map((track) => {
-              const trackClips = clips.filter((c) => c.trackId === track.id);
+              const trackClips = clips
+                .filter((c) => c.trackId === track.id)
+                .sort((a, b) => a.start - b.start);
+
               return (
                 <div
                   key={track.id}
@@ -668,85 +912,172 @@ export const Timeline: React.FC<TimelineProps> = ({
                   }}
                   className={`h-11 border-b border-[#181a28] relative hover:bg-[#12131e]/50 transition ${
                     track.isLocked ? 'bg-amber-950/10' : ''
+                  } ${
+                    dragState &&
+                    dragState.type === 'move' &&
+                    (dragState.targetTrackId || dragState.trackId) === track.id &&
+                    dragState.trackId !== track.id
+                      ? 'bg-cyan-950/40 ring-1 ring-cyan-500/50'
+                      : ''
                   }`}
                 >
-                  {trackClips.map((clip) => {
+                  {/* Magnetic Drop Insertion Line on this track */}
+                  {dragState &&
+                    dragState.type === 'move' &&
+                    (dragState.targetTrackId || dragState.trackId) === track.id &&
+                    dragState.dropInsertX !== undefined && (
+                      <div
+                        className="absolute top-0 bottom-0 w-1 bg-cyan-400 shadow-[0_0_12px_#06b6d4] z-40 pointer-events-none flex flex-col justify-between items-center -translate-x-1/2 animate-pulse"
+                        style={{ left: `${dragState.dropInsertX}px` }}
+                      >
+                        <div className="w-2.5 h-2.5 bg-cyan-400 rotate-45 -mt-1 shadow-md shadow-cyan-400" />
+                        <div className="w-2.5 h-2.5 bg-cyan-400 rotate-45 -mb-1 shadow-md shadow-cyan-400" />
+                      </div>
+                    )}
+
+                  {/* Leading Gap Snap indicator before first clip */}
+                  {!track.isLocked && trackClips.length > 0 && trackClips[0].start > 0.35 && onCloseGaps && (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCloseGaps(track.id);
+                      }}
+                      className="absolute top-1.5 bottom-1.5 border border-dashed border-cyan-500/40 rounded flex items-center justify-center bg-cyan-950/20 hover:bg-cyan-500/20 cursor-pointer text-[10px] text-cyan-300 transition group/gap z-5"
+                      style={{
+                        left: '2px',
+                        width: `${Math.max(20, trackClips[0].start * zoom - 4)}px`,
+                      }}
+                      title={language === 'km' ? 'ចុចដើម្បីភ្ជាប់ចន្លោះទទេនេះ' : 'Click to close gap'}
+                    >
+                      <span className="opacity-0 group-hover/gap:opacity-100 flex items-center space-x-0.5 font-semibold text-[9px]">
+                        <Link className="w-2.5 h-2.5" />
+                        <span>{language === 'km' ? 'ភ្ជាប់' : 'Snap'}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {trackClips.map((clip, idx) => {
                     const isSelected = selectedClipId === clip.id;
-                    const left = clip.start * zoom;
+                    const isBeingDragged = dragState?.clipId === clip.id && dragState.type === 'move';
+                    const left = isBeingDragged ? dragState.currentStart * zoom : clip.start * zoom;
                     const width = Math.max(18, clip.duration * zoom);
+                    const nextClip = trackClips[idx + 1];
+                    const clipEnd = clip.start + clip.duration;
+                    const gap = nextClip ? nextClip.start - clipEnd : 0;
 
                     return (
-                      <div
-                        key={clip.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectClip(clip.id);
-                          if (!hasDraggedRef.current) {
-                            updateTimeFromEvent(e);
-                          }
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          onSelectClip(clip.id);
-                          startClipDrag(e, clip, 'move');
-                        }}
-                        onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
-                        className={`absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing flex items-center px-2 overflow-hidden shadow-sm transition-shadow group ${
-                          isSelected
-                            ? 'ring-2 ring-cyan-400 shadow-md shadow-cyan-900/50 z-10 brightness-110'
-                            : 'hover:brightness-105'
-                        } ${track.isLocked ? 'cursor-not-allowed opacity-90' : ''}`}
-                        style={{
-                          left: `${left}px`,
-                          width: `${width}px`,
-                          backgroundColor: clip.color || '#0284c7',
-                        }}
-                      >
-                        {/* Left Trim Handle */}
-                        {!track.isLocked && (
-                          <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              startClipDrag(e, clip, 'trim-left');
-                            }}
-                            className="absolute left-0 top-0 bottom-0 w-2.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
-                            title="Trim Start"
-                          />
-                        )}
+                      <React.Fragment key={clip.id}>
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectClip(clip.id);
+                            if (!hasDraggedRef.current) {
+                              updateTimeFromEvent(e);
+                            }
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            onSelectClip(clip.id);
+                            startClipDrag(e, clip, 'move');
+                          }}
+                          onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
+                          title={language === 'km' ? 'អូសទៅឆ្វេង ឬស្ដាំ ដើម្បីប្ដូរទីតាំងលើ Track' : 'Drag left or right on track'}
+                          className={`absolute top-1 bottom-1 rounded-md flex items-center px-2 shadow-sm transition-shadow group select-none ${
+                            isBeingDragged
+                              ? 'overflow-visible ring-2 ring-cyan-300 shadow-2xl shadow-cyan-950 z-50 scale-[1.02] opacity-95 cursor-grabbing brightness-110'
+                              : isSelected
+                              ? 'overflow-hidden ring-2 ring-cyan-400 shadow-md shadow-cyan-900/50 z-10 brightness-110 cursor-grab'
+                              : 'overflow-hidden hover:brightness-105 cursor-grab'
+                          } ${track.isLocked ? 'cursor-not-allowed opacity-90' : ''}`}
+                          style={{
+                            left: `${left}px`,
+                            width: `${width}px`,
+                            backgroundColor: clip.color || '#0284c7',
+                          }}
+                        >
+                          {/* Floating drag position indicator */}
+                          {isBeingDragged && (
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#0a0c14]/95 text-cyan-300 font-mono text-[11px] font-bold px-2.5 py-1 rounded-md border border-cyan-400/80 shadow-2xl whitespace-nowrap z-50 pointer-events-none flex items-center space-x-1.5 backdrop-blur-md">
+                              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-sm shadow-cyan-400" />
+                              <span>{dragState.currentStart.toFixed(2)}s</span>
+                              <span className="text-[10px] text-gray-400 font-normal">
+                                ({dragState.currentDeltaX >= 0 ? '+' : ''}{(dragState.currentDeltaX / zoom).toFixed(2)}s)
+                              </span>
+                              {dragState.dropInsertX !== undefined && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-sans">
+                                  {language === 'km' ? 'ប្ដូរលំដាប់' : 'Reorder'}
+                                </span>
+                              )}
+                            </div>
+                          )}
 
-                        {/* Title & info */}
-                        <div className="flex items-center space-x-1.5 min-w-0 z-0 pointer-events-none select-none">
-                          {track.isLocked && <Lock className="w-2.5 h-2.5 text-amber-300 shrink-0" />}
-                          <span className="text-[11px] font-semibold text-white drop-shadow truncate">
-                            {clip.title}
-                          </span>
+                          {/* Left Trim Handle */}
+                          {!track.isLocked && (
+                            <div
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                startClipDrag(e, clip, 'trim-left');
+                              }}
+                              className="absolute left-0 top-0 bottom-0 w-2.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
+                              title="Trim Start"
+                            />
+                          )}
+
+                          {/* Title & info */}
+                          <div className="flex items-center space-x-1.5 min-w-0 z-0 pointer-events-none select-none">
+                            {track.isLocked && <Lock className="w-2.5 h-2.5 text-amber-300 shrink-0" />}
+                            <span className="text-[11px] font-semibold text-white drop-shadow truncate">
+                              {clip.title}
+                            </span>
+                          </div>
+
+                          {/* Audio Waveform visualization */}
+                          {clip.audioWaveform && (
+                            <div className="absolute inset-0 flex items-center justify-around opacity-30 pointer-events-none px-2">
+                              {clip.audioWaveform.map((val, i) => (
+                                <div
+                                  key={i}
+                                  className="w-1 bg-white rounded-full"
+                                  style={{ height: `${Math.max(15, val * 0.85)}%` }}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Right Trim Handle */}
+                          {!track.isLocked && (
+                            <div
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                startClipDrag(e, clip, 'trim-right');
+                              }}
+                              className="absolute right-0 top-0 bottom-0 w-2.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
+                              title="Trim End"
+                            />
+                          )}
                         </div>
 
-                        {/* Audio Waveform visualization */}
-                        {clip.audioWaveform && (
-                          <div className="absolute inset-0 flex items-center justify-around opacity-30 pointer-events-none px-2">
-                            {clip.audioWaveform.map((val, i) => (
-                              <div
-                                key={i}
-                                className="w-1 bg-white rounded-full"
-                                style={{ height: `${Math.max(15, val * 0.85)}%` }}
-                              />
-                            ))}
+                        {/* Gap Snap Button between consecutive clips if gap exists */}
+                        {!track.isLocked && gap > 0.25 && onCloseGaps && (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCloseGaps(track.id);
+                            }}
+                            className="absolute top-1.5 bottom-1.5 border border-dashed border-cyan-500/40 rounded flex items-center justify-center bg-cyan-950/20 hover:bg-cyan-500/20 cursor-pointer text-[10px] text-cyan-300 transition group/gap z-5"
+                            style={{
+                              left: `${clipEnd * zoom + 2}px`,
+                              width: `${Math.max(20, gap * zoom - 4)}px`,
+                            }}
+                            title={language === 'km' ? 'ចុចដើម្បីភ្ជាប់ចន្លោះទទេនេះ' : 'Click to close gap'}
+                          >
+                            <span className="opacity-0 group-hover/gap:opacity-100 flex items-center space-x-0.5 font-semibold text-[9px]">
+                              <Link className="w-2.5 h-2.5" />
+                              <span>{language === 'km' ? 'ភ្ជាប់' : 'Snap'}</span>
+                            </span>
                           </div>
                         )}
-
-                        {/* Right Trim Handle */}
-                        {!track.isLocked && (
-                          <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              startClipDrag(e, clip, 'trim-right');
-                            }}
-                            className="absolute right-0 top-0 bottom-0 w-2.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
-                            title="Trim End"
-                          />
-                        )}
-                      </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>
@@ -783,7 +1114,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               onSplitClip(contextMenu.clipId, currentTime);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group"
+            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group cursor-pointer"
           >
             <div className="flex items-center space-x-2">
               <Scissors className="w-3.5 h-3.5 text-cyan-400" />
@@ -792,13 +1123,30 @@ export const Timeline: React.FC<TimelineProps> = ({
             <span className="text-[10px] text-gray-400 font-mono">Ctrl+B</span>
           </button>
 
+          {/* Option 1b: Split All Tracks */}
+          {onSplitAllTracks && (
+            <button
+              onClick={() => {
+                onSplitAllTracks(currentTime);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group cursor-pointer"
+            >
+              <div className="flex items-center space-x-2">
+                <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{language === 'km' ? 'កាត់ពុះគ្រប់ Track' : 'Split All Tracks'}</span>
+              </div>
+              <span className="text-[10px] text-gray-400 font-mono">Ctrl+Shift+B</span>
+            </button>
+          )}
+
           {/* Option 2: Split & Delete Left */}
           <button
             onClick={() => {
               onSplitDeleteLeft(contextMenu.clipId, currentTime);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group"
+            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group cursor-pointer"
           >
             <div className="flex items-center space-x-2">
               <div className="flex items-center -space-x-1">
@@ -816,7 +1164,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               onSplitDeleteRight(contextMenu.clipId, currentTime);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group"
+            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between group cursor-pointer"
           >
             <div className="flex items-center space-x-2">
               <div className="flex items-center -space-x-1">
@@ -830,13 +1178,48 @@ export const Timeline: React.FC<TimelineProps> = ({
 
           <div className="h-px bg-[#26283d] my-1" />
 
+          {/* Connect / Close Gaps in this track */}
+          {onCloseGaps && (
+            <button
+              onClick={() => {
+                const targetClip = clips.find((c) => c.id === contextMenu.clipId);
+                if (targetClip) onCloseGaps(targetClip.trackId);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center space-x-2">
+                <Link className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{language === 'km' ? 'ភ្ជាប់ Clips ក្នុង Track នេះ' : 'Connect Track Clips'}</span>
+              </div>
+            </button>
+          )}
+
+          {/* Connect Gaps All Tracks */}
+          {onCloseGaps && (
+            <button
+              onClick={() => {
+                onCloseGaps();
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center space-x-2">
+                <Magnet className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{language === 'km' ? 'ភ្ជាប់ Clips គ្រប់ Tracks' : 'Connect All Tracks'}</span>
+              </div>
+            </button>
+          )}
+
+          <div className="h-px bg-[#26283d] my-1" />
+
           {/* Duplicate */}
           <button
             onClick={() => {
               onDuplicateClip(contextMenu.clipId);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between"
+            className="w-full px-3 py-1.5 text-left hover:bg-[#25283e] flex items-center justify-between cursor-pointer"
           >
             <div className="flex items-center space-x-2">
               <Copy className="w-3.5 h-3.5 text-gray-300" />
@@ -844,17 +1227,17 @@ export const Timeline: React.FC<TimelineProps> = ({
             </div>
           </button>
 
-          {/* Delete */}
+          {/* Delete & Auto-Connect */}
           <button
             onClick={() => {
               onDeleteClip(contextMenu.clipId);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 text-left hover:bg-rose-600/30 text-rose-300 flex items-center justify-between"
+            className="w-full px-3 py-1.5 text-left hover:bg-rose-600/30 text-rose-300 flex items-center justify-between cursor-pointer"
           >
             <div className="flex items-center space-x-2">
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-              <span>{t.deleteClip}</span>
+              <span>{isAutoConnect ? (language === 'km' ? 'លុប & ភ្ជាប់ស្វ័យប្រវត្តិ' : 'Delete & Auto-Connect') : t.deleteClip}</span>
             </div>
             <span className="text-[10px] text-rose-400/80 font-mono">Del</span>
           </button>

@@ -9,9 +9,11 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
+  Flame,
 } from 'lucide-react';
 import { ClipFilters, ClipTransform, TextConfig, TimelineClip, TimelineTrack } from '../types/editor';
 import { Language, translations } from '../utils/i18n';
+import { CAPCUT_CAPTION_STYLES, CaptionStylePreset } from '../utils/captionStyles';
 
 interface InspectorPanelProps {
   selectedClip: TimelineClip | null;
@@ -23,6 +25,7 @@ interface InspectorPanelProps {
   onUpdateClipAudio: (clipId: string, volume: number, fadeIn: number, fadeOut: number) => void;
   onUpdateClipSpeed: (clipId: string, speed: number) => void;
   onUpdateTextConfig: (clipId: string, textConfig: Partial<TextConfig>) => void;
+  onApplyStyleToAllCaptions?: (config: Partial<TextConfig>) => void;
   language: Language;
 }
 
@@ -36,10 +39,13 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onUpdateClipAudio,
   onUpdateClipSpeed,
   onUpdateTextConfig,
+  onApplyStyleToAllCaptions,
   language,
 }) => {
   const t = translations[language];
-  const [activeTab, setActiveTab] = useState<'transform' | 'audio' | 'speed' | 'color' | 'text'>('transform');
+  const [activeTab, setActiveTab] = useState<'transform' | 'audio' | 'speed' | 'color' | 'text'>(
+    selectedClip?.type === 'text' ? 'text' : 'transform'
+  );
 
   if (!selectedClip) {
     return (
@@ -271,29 +277,93 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           </div>
         )}
 
-        {/* 2. TEXT TAB */}
+        {/* 2. TEXT & CAPTION TAB (CapCut Inspector) */}
         {activeTab === 'text' && textConfig && (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Quick CapCut Style Presets Picker */}
+            <div className="p-2.5 rounded-lg bg-[#181a28] border border-[#27293d] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-gray-200 text-[11px] flex items-center space-x-1">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{language === 'km' ? 'ម៉ូត Caption ពេញនិយម' : 'CapCut Style Templates'}</span>
+                </span>
+                {onApplyStyleToAllCaptions && (
+                  <button
+                    onClick={() => onApplyStyleToAllCaptions(textConfig)}
+                    className="text-[10px] text-amber-300 bg-amber-500/20 hover:bg-amber-500/30 px-2 py-0.5 rounded border border-amber-500/40 font-bold transition cursor-pointer flex items-center space-x-1"
+                    title={t.applyToAllCaptions}
+                  >
+                    <Sparkles className="w-2.5 h-2.5" />
+                    <span>{language === 'km' ? 'ដាក់លើទាំងអស់' : 'Apply All'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 2-column quick preset badges */}
+              <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-0.5">
+                {CAPCUT_CAPTION_STYLES.map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() =>
+                      onUpdateTextConfig(selectedClip.id, {
+                        ...st.config,
+                        text: textConfig.text, // keep original line text
+                      })
+                    }
+                    className="p-1.5 rounded-lg border border-[#27293d] bg-[#141522] hover:bg-[#1e2034] text-left transition cursor-pointer flex flex-col justify-between"
+                  >
+                    <span className="text-[9px] text-gray-400 truncate">{language === 'km' ? st.nameKm : st.name}</span>
+                    <span
+                      className="text-[11px] font-bold truncate mt-0.5 px-1 py-0.2 rounded"
+                      style={{
+                        color: st.config.color,
+                        backgroundColor: st.config.backgroundColor || 'transparent',
+                        textShadow: st.config.strokeWidth ? `0 0 2px ${st.config.strokeColor}` : 'none',
+                      }}
+                    >
+                      {st.previewText}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Text Content */}
             <div>
-              <span className="text-gray-300 block mb-1">Text Content</span>
+              <span className="text-gray-300 block mb-1 font-medium">{language === 'km' ? 'អត្ថបទ Subtitle / Text' : 'Text Content'}</span>
               <textarea
                 value={textConfig.text}
                 onChange={(e) => onUpdateTextConfig(selectedClip.id, { text: e.target.value })}
                 rows={3}
-                className="w-full bg-[#1b1c2b] border border-[#2b2e44] rounded p-2 text-xs text-gray-200"
+                className="w-full bg-[#1b1c2b] border border-[#2b2e44] focus:border-cyan-500 rounded p-2 text-xs text-gray-200 leading-relaxed resize-none focus:outline-none"
               />
+            </div>
+
+            {/* Font Family */}
+            <div>
+              <span className="text-gray-300 block mb-1 font-medium">{t.font}</span>
+              <select
+                value={textConfig.fontFamily || 'Inter'}
+                onChange={(e) => onUpdateTextConfig(selectedClip.id, { fontFamily: e.target.value })}
+                className="w-full bg-[#1b1c2b] border border-[#2b2e44] rounded p-1.5 text-xs text-gray-200 focus:outline-none cursor-pointer"
+              >
+                <option value="Inter">Inter (CapCut Standard Sans)</option>
+                <option value="Kantumruy Pro">Kantumruy Pro (អក្សរខ្មែរស្រស់ច្បាស់)</option>
+                <option value="JetBrains Mono">JetBrains Mono (Cyber Monospace)</option>
+                <option value="sans-serif">System Sans-Serif</option>
+              </select>
             </div>
 
             {/* Font Size */}
             <div>
-              <div className="flex justify-between text-gray-300 mb-1">
+              <div className="flex justify-between text-gray-300 mb-1 font-medium">
                 <span>{t.fontSize}</span>
-                <span className="font-mono text-cyan-400">{textConfig.fontSize}px</span>
+                <span className="font-mono text-cyan-400 font-bold">{textConfig.fontSize}px</span>
               </div>
               <input
                 type="range"
-                min="16"
-                max="72"
+                min="18"
+                max="68"
                 step="2"
                 value={textConfig.fontSize}
                 onChange={(e) =>
@@ -303,42 +373,128 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               />
             </div>
 
-            {/* Text Color & Pill Background */}
+            {/* Text Color & Outline Color */}
             <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-gray-300 block mb-1">Text Color</span>
-                <input
-                  type="color"
-                  value={textConfig.color}
-                  onChange={(e) => onUpdateTextConfig(selectedClip.id, { color: e.target.value })}
-                  className="w-full h-8 bg-transparent cursor-pointer rounded"
-                />
+              <div className="bg-[#181a28] p-2 rounded-lg border border-[#27293d]">
+                <span className="text-gray-300 block mb-1 text-[11px] font-medium">{t.textColor}</span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="color"
+                    value={textConfig.color}
+                    onChange={(e) => onUpdateTextConfig(selectedClip.id, { color: e.target.value })}
+                    className="w-7 h-7 bg-transparent cursor-pointer rounded border border-gray-700"
+                  />
+                  <span className="font-mono text-[10px] text-gray-400 uppercase">{textConfig.color}</span>
+                </div>
               </div>
 
-              <div>
-                <span className="text-gray-300 block mb-1">Outline Color</span>
-                <input
-                  type="color"
-                  value={textConfig.strokeColor}
-                  onChange={(e) => onUpdateTextConfig(selectedClip.id, { strokeColor: e.target.value })}
-                  className="w-full h-8 bg-transparent cursor-pointer rounded"
-                />
+              <div className="bg-[#181a28] p-2 rounded-lg border border-[#27293d]">
+                <span className="text-gray-300 block mb-1 text-[11px] font-medium">{language === 'km' ? 'បន្ទាត់ Outline' : 'Outline Color'}</span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="color"
+                    value={textConfig.strokeColor || '#000000'}
+                    onChange={(e) => onUpdateTextConfig(selectedClip.id, { strokeColor: e.target.value })}
+                    className="w-7 h-7 bg-transparent cursor-pointer rounded border border-gray-700"
+                  />
+                  <span className="font-mono text-[10px] text-gray-400 uppercase">{textConfig.strokeColor || '#000000'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Stroke (Outline) Width */}
+            <div>
+              <div className="flex justify-between text-gray-300 mb-1 font-medium">
+                <span>{language === 'km' ? 'កម្រាស់បន្ទាត់ Outline' : 'Outline Thickness'}</span>
+                <span className="font-mono text-cyan-400">{textConfig.strokeWidth || 0}px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.5"
+                value={textConfig.strokeWidth || 0}
+                onChange={(e) =>
+                  onUpdateTextConfig(selectedClip.id, { strokeWidth: parseFloat(e.target.value) })
+                }
+                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded-lg"
+              />
+            </div>
+
+            {/* Background Pill Box */}
+            <div className="space-y-1.5">
+              <span className="text-gray-300 block font-medium">{language === 'km' ? 'ប្រអប់ផ្ទៃខាងក្រោយ (Background Box)' : 'Background Box'}</span>
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  { label: 'Transparent', val: 'transparent' },
+                  { label: 'Dark 80%', val: 'rgba(0,0,0,0.8)' },
+                  { label: 'Red 85%', val: 'rgba(239,68,68,0.85)' },
+                  { label: 'Navy 85%', val: 'rgba(15,23,42,0.85)' },
+                ].map((bg) => (
+                  <button
+                    key={bg.val}
+                    onClick={() => onUpdateTextConfig(selectedClip.id, { backgroundColor: bg.val })}
+                    className={`py-1 rounded text-[10px] font-medium border transition cursor-pointer ${
+                      textConfig.backgroundColor === bg.val
+                        ? 'border-cyan-400 bg-cyan-600/30 text-cyan-300'
+                        : 'border-[#282a3f] bg-[#1a1b28] text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {bg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Vertical Position Presets (yPercent) */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-gray-300 font-medium">
+                <span>{language === 'km' ? 'ទីតាំងលើ Canvas (Y %)' : 'Vertical Position (Y %)'}</span>
+                <span className="font-mono text-cyan-400">{textConfig.yPercent || 78}%</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  onClick={() => onUpdateTextConfig(selectedClip.id, { yPercent: 25 })}
+                  className={`py-1 rounded text-[11px] font-semibold border transition cursor-pointer ${
+                    (textConfig.yPercent || 78) === 25 ? 'bg-cyan-600/40 text-cyan-300 border-cyan-400' : 'bg-[#181a28] text-gray-400 border-[#282a3f]'
+                  }`}
+                >
+                  Top (25%)
+                </button>
+                <button
+                  onClick={() => onUpdateTextConfig(selectedClip.id, { yPercent: 50 })}
+                  className={`py-1 rounded text-[11px] font-semibold border transition cursor-pointer ${
+                    (textConfig.yPercent || 78) === 50 ? 'bg-cyan-600/40 text-cyan-300 border-cyan-400' : 'bg-[#181a28] text-gray-400 border-[#282a3f]'
+                  }`}
+                >
+                  Center (50%)
+                </button>
+                <button
+                  onClick={() => onUpdateTextConfig(selectedClip.id, { yPercent: 78 })}
+                  className={`py-1 rounded text-[11px] font-semibold border transition cursor-pointer ${
+                    (textConfig.yPercent || 78) === 78 ? 'bg-cyan-600/40 text-cyan-300 border-cyan-400' : 'bg-[#181a28] text-gray-400 border-[#282a3f]'
+                  }`}
+                >
+                  Subtitle (78%)
+                </button>
               </div>
             </div>
 
             {/* Animation Style */}
             <div>
-              <span className="text-gray-300 block mb-1">{t.animation}</span>
+              <span className="text-gray-300 block mb-1 font-medium">{t.animation}</span>
               <select
                 value={textConfig.animation}
                 onChange={(e) =>
                   onUpdateTextConfig(selectedClip.id, { animation: e.target.value as any })
                 }
-                className="w-full bg-[#1b1c2b] border border-[#2b2e44] rounded p-1.5 text-xs text-gray-200"
+                className="w-full bg-[#1b1c2b] border border-[#2b2e44] focus:border-cyan-500 rounded p-1.5 text-xs text-gray-200 cursor-pointer"
               >
-                <option value="pop">Pop Impact</option>
-                <option value="bounce">Bounce Karaoke</option>
-                <option value="fade">Smooth Fade</option>
+                <option value="pop">⚡ Pop Bounce (CapCut Viral Hook)</option>
+                <option value="bounce">🔥 Kinetic Pulse (MrBeast Style)</option>
+                <option value="karaoke">🎤 Karaoke Wave Glow</option>
+                <option value="typewriter">⌨️ Typewriter Letter-by-Letter</option>
+                <option value="fade">✨ Smooth Cinema Fade</option>
                 <option value="none">Static None</option>
               </select>
             </div>

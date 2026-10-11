@@ -33,6 +33,13 @@ export interface ClipFilters {
   preset: string; // 'none' | 'cinematic' | 'cyberpunk' | 'vintage' | 'noir' | 'warm'
 }
 
+export type WordAnimationStyle =
+  | 'none'
+  | 'word-by-word'
+  | 'word-highlight'
+  | 'word-bounce'
+  | 'karaoke';
+
 export interface TextConfig {
   text: string;
   fontSize: number;
@@ -41,9 +48,25 @@ export interface TextConfig {
   strokeColor: string;
   strokeWidth: number;
   backgroundColor: string;
-  animation: 'none' | 'bounce' | 'fade' | 'karaoke' | 'typewriter' | 'pop';
+  animation:
+    | 'none'
+    | 'bounce'
+    | 'fade'
+    | 'karaoke'
+    | 'typewriter'
+    | 'pop'
+    | 'word-by-word'
+    | 'word-highlight'
+    | 'word-bounce';
   align: 'left' | 'center' | 'right';
-  yPercent: number; // position from top
+  yPercent: number; // position from top (e.g. 78% for subtitles, 25% for titles)
+  shadowColor?: string;
+  shadowBlur?: number;
+  stylePreset?: string;
+  isCaption?: boolean;
+  wordStyle?: WordAnimationStyle;
+  highlightColor?: string; // Color of active spoken word (e.g. #ffe600, #22c55e, #ec4899)
+  highlightBg?: string;
 }
 
 export interface TimelineClip {

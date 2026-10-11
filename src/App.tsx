@@ -14,11 +14,13 @@ import {
   TimelineClip,
   TimelineTrack,
   TrackType,
+  WordAnimationStyle,
 } from './types/editor';
 import { SAMPLE_MEDIA, INITIAL_TRACKS, INITIAL_CLIPS } from './utils/sampleData';
 import { autoCutSilenceFromClips, generateWaveformPeaks } from './utils/audioAnalysis';
 import { soundEngine } from './utils/soundEngine';
 import { Language, translations } from './utils/i18n';
+import { getCaptionStyleById, CAPCUT_CAPTION_STYLES } from './utils/captionStyles';
 
 // Components
 import { HeaderBar } from './components/HeaderBar';
@@ -52,11 +54,17 @@ export default function App() {
   // Playback State
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isAutoConnect, setIsAutoConnect] = useState<boolean>(true);
 
   // Modals
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isAIMagicOpen, setIsAIMagicOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Global Caption Style & Word Animation State (Synchronized across Audio and Text tabs)
+  const [activeCaptionStyleId, setActiveCaptionStyleId] = useState<string>('alex-hormozi-word');
+  const [activeWordStyle, setActiveWordStyle] = useState<WordAnimationStyle>('word-by-word');
+  const [activeHighlightColor, setActiveHighlightColor] = useState<string>('#ffe600');
 
   // Undo / Redo History
   const [history, setHistory] = useState<TimelineClip[][]>([INITIAL_CLIPS]);
@@ -103,6 +111,7 @@ export default function App() {
 
   // Playhead loop animation with requestAnimationFrame
   const lastTimeRef = useRef<number | null>(null);
+  const handleFinishClipDragRef = useRef<((id: string, start: number, duration: number, trackId?: string) => void) | null>(null);
   useEffect(() => {
     let animId: number;
     const loop = (timestamp: number) => {
@@ -161,8 +170,15 @@ export default function App() {
         clips.find((c) => currentTime >= c.start && currentTime <= c.start + c.duration)?.id;
 
       // CapCut Split Shortcuts:
+      // Ctrl+Shift+B: Split All Tracks at Playhead
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        handleSplitAllTracks(currentTime);
+        return;
+      }
+
       // 'c' or 'C' or Ctrl+B: Split at Playhead
-      if (((e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b')) && targetClipId) {
+      if (((e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) || ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'b')) && targetClipId) {
         e.preventDefault();
         handleSplitClip(targetClipId, currentTime);
       }
@@ -196,7 +212,24 @@ export default function App() {
         handleRedo();
       }
 
-      // ArrowLeft / ArrowRight
+      // ArrowLeft / ArrowRight: Nudge clip left/right if Alt or brackets pressed; otherwise seek playhead
+      if (
+        selectedClipId &&
+        ((e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+          e.key === '[' ||
+          e.key === ']')
+      ) {
+        e.preventDefault();
+        const step = e.shiftKey ? 0.5 : 0.1;
+        const dir = e.key === 'ArrowLeft' || e.key === '[' ? -1 : 1;
+        const target = clips.find((c) => c.id === selectedClipId);
+        if (target && handleFinishClipDragRef.current) {
+          const newStart = Math.max(0, Math.round((target.start + dir * step) * 100) / 100);
+          handleFinishClipDragRef.current(target.id, newStart, target.duration, target.trackId);
+        }
+        return;
+      }
+
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setCurrentTime((prev) => Math.max(0, prev - 0.2));
@@ -209,7 +242,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClipId, currentTime, totalDuration, handleUndo, handleRedo]);
+  }, [selectedClipId, currentTime, totalDuration, handleUndo, handleRedo, clips]);
 
   // 1. AutoCut Silence Removal (Core requested feature!)
   const handleAutoCutSilence = (thresholdDb: number, minDuration: number) => {
@@ -293,18 +326,33 @@ export default function App() {
       return;
     }
 
+    // Proportionally split audio waveform peaks if available
+    let firstWaveform = clip.audioWaveform;
+    let secondWaveform = clip.audioWaveform;
+    if (clip.audioWaveform && clip.audioWaveform.length > 0) {
+      const ratio = firstDuration / clip.duration;
+      const splitIdx = Math.max(
+        1,
+        Math.min(clip.audioWaveform.length - 1, Math.round(clip.audioWaveform.length * ratio))
+      );
+      firstWaveform = clip.audioWaveform.slice(0, splitIdx);
+      secondWaveform = clip.audioWaveform.slice(splitIdx);
+    }
+
     const firstClip: TimelineClip = {
       ...clip,
       id: `${clip.id}-split-1-${Date.now()}`,
       duration: Math.round(firstDuration * 100) / 100,
+      audioWaveform: firstWaveform,
     };
 
     const secondClip: TimelineClip = {
       ...clip,
-      id: `${clip.id}-split-2-${Date.now()}`,
+      id: `${clip.id}-split-2-${Date.now() + 1}`,
       start: Math.round(splitTime * 100) / 100,
       sourceStart: clip.sourceStart + firstDuration * (clip.speed || 1),
       duration: Math.round(secondDuration * 100) / 100,
+      audioWaveform: secondWaveform,
     };
 
     const updated = clips.filter((c) => c.id !== clipId).concat([firstClip, secondClip]);
@@ -313,6 +361,73 @@ export default function App() {
     setSelectedClipId(secondClip.id);
     soundEngine.playEffect('whoosh');
     showToast(language === 'km' ? 'បានកាត់ពុះ Clip ជាពីរ (Split)' : 'Clip split at playhead');
+  };
+
+  // Split all intersecting clips across all tracks at time (CapCut: Ctrl+Shift+B)
+  const handleSplitAllTracks = (time: number) => {
+    const intersectingClips = clips.filter((c) => {
+      const track = tracks.find((t) => t.id === c.trackId);
+      if (track?.isLocked) return false;
+      return time > c.start + 0.05 && time < c.start + c.duration - 0.05;
+    });
+
+    if (intersectingClips.length === 0) {
+      showToast(
+        language === 'km'
+          ? 'គ្មាន Clip ណាត្រង់ក្បាលចាក់ត្រូវកាត់ពុះទេ'
+          : 'No clips intersecting playhead to split'
+      );
+      return;
+    }
+
+    let newClips = [...clips];
+
+    intersectingClips.forEach((clip) => {
+      const firstDuration = time - clip.start;
+      const secondDuration = clip.duration - firstDuration;
+
+      let firstWaveform = clip.audioWaveform;
+      let secondWaveform = clip.audioWaveform;
+      if (clip.audioWaveform && clip.audioWaveform.length > 0) {
+        const ratio = firstDuration / clip.duration;
+        const splitIdx = Math.max(
+          1,
+          Math.min(clip.audioWaveform.length - 1, Math.round(clip.audioWaveform.length * ratio))
+        );
+        firstWaveform = clip.audioWaveform.slice(0, splitIdx);
+        secondWaveform = clip.audioWaveform.slice(splitIdx);
+      }
+
+      const firstClip: TimelineClip = {
+        ...clip,
+        id: `${clip.id}-split-1-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        duration: Math.round(firstDuration * 100) / 100,
+        audioWaveform: firstWaveform,
+      };
+
+      const secondClip: TimelineClip = {
+        ...clip,
+        id: `${clip.id}-split-2-${Date.now() + 1}-${Math.random().toString(36).slice(2, 5)}`,
+        start: Math.round(time * 100) / 100,
+        sourceStart: clip.sourceStart + firstDuration * (clip.speed || 1),
+        duration: Math.round(secondDuration * 100) / 100,
+        audioWaveform: secondWaveform,
+      };
+
+      const idx = newClips.findIndex((c) => c.id === clip.id);
+      if (idx !== -1) {
+        newClips.splice(idx, 1, firstClip, secondClip);
+      }
+    });
+
+    setClips(newClips);
+    pushHistory(newClips);
+    soundEngine.playEffect('whoosh');
+    showToast(
+      language === 'km'
+        ? `បានកាត់ពុះ Clips លើ ${intersectingClips.length} Tracks ត្រង់ក្បាលចាក់!`
+        : `Split clips across ${intersectingClips.length} tracks at playhead!`
+    );
   };
 
   // CapCut Option 2: Split & Delete Left (Q - Trim Start to Playhead)
@@ -425,13 +540,151 @@ export default function App() {
     );
   };
 
-  // 3. Delete clip
+  // 3. Delete clip with Auto-Connect / Magnetic Ripple across ALL tracks
   const handleDeleteClip = (clipId: string) => {
-    const updated = clips.filter((c) => c.id !== clipId);
+    const targetClip = clips.find((c) => c.id === clipId);
+    if (!targetClip) return;
+    const track = tracks.find((t) => t.id === targetClip.trackId);
+    if (track?.isLocked) {
+      showToast(language === 'km' ? 'ជួរ Track នេះត្រូវបានចាក់សោ' : 'Track is locked');
+      return;
+    }
+
+    const trackId = targetClip.trackId;
+    const delStart = targetClip.start;
+    const delDuration = targetClip.duration;
+
+    // Remove the clip
+    const remaining = clips.filter((c) => c.id !== clipId);
+
+    let updated: TimelineClip[];
+
+    if (isAutoConnect) {
+      // 1. Ripple all subsequent clips on the same track to the left by the deleted duration
+      const shifted = remaining.map((c) => {
+        if (c.trackId === trackId && c.start >= delStart - 0.02) {
+          const newStart = Math.max(0, Math.round((c.start - delDuration) * 100) / 100);
+          return { ...c, start: newStart };
+        }
+        return c;
+      });
+
+      // 2. Precision magnetic snap for clips on this track to ensure seamless gapless connection
+      const otherTrackClips = shifted.filter((c) => c.trackId !== trackId);
+      const thisTrackClips = shifted
+        .filter((c) => c.trackId === trackId)
+        .sort((a, b) => a.start - b.start);
+
+      let prevEnd = 0;
+      const connectedThisTrack: TimelineClip[] = [];
+
+      for (let i = 0; i < thisTrackClips.length; i++) {
+        const c = thisTrackClips[i];
+        let currentStart = c.start;
+
+        if (i === 0) {
+          // If deleted clip was at start or near start, snap first remaining clip to 0
+          if (delStart < 0.15 && currentStart < 0.25) {
+            currentStart = 0;
+          }
+          prevEnd = currentStart + c.duration;
+          connectedThisTrack.push({ ...c, start: Math.round(currentStart * 100) / 100 });
+        } else {
+          // If this clip is near the previous clip's end, snap it tightly with zero gap
+          if (
+            Math.abs(currentStart - prevEnd) <= 0.35 ||
+            (c.start >= delStart - 0.02 && Math.abs(currentStart - prevEnd) <= 0.6)
+          ) {
+            currentStart = prevEnd;
+          }
+          prevEnd = currentStart + c.duration;
+          connectedThisTrack.push({ ...c, start: Math.round(currentStart * 100) / 100 });
+        }
+      }
+
+      updated = [...otherTrackClips, ...connectedThisTrack];
+    } else {
+      updated = remaining;
+    }
+
     setClips(updated);
     pushHistory(updated);
-    setSelectedClipId(null);
+
+    // Auto-select adjacent clip so editing flow continues uninterrupted
+    const nextClipOnTrack = updated.find(
+      (c) => c.trackId === trackId && Math.abs(c.start - delStart) < 0.2
+    );
+    const prevClipOnTrack = updated
+      .filter((c) => c.trackId === trackId && c.start <= delStart)
+      .sort((a, b) => b.start - a.start)[0];
+
+    setSelectedClipId(nextClipOnTrack?.id || prevClipOnTrack?.id || null);
     soundEngine.playEffect('pop');
+    showToast(
+      language === 'km'
+        ? 'បានលុប Clip & ភ្ជាប់ដោយស្វ័យប្រវត្តិ (Auto-Connected)'
+        : 'Clip deleted & auto-connected'
+    );
+  };
+
+  // Close and connect all gaps on a single track or all tracks
+  const handleCloseTrackGaps = (targetTrackId?: string) => {
+    const targetTrackIds = targetTrackId
+      ? [targetTrackId]
+      : Array.from(new Set(tracks.map((t) => t.id)));
+
+    let updated = [...clips];
+    let totalGapsClosed = 0;
+
+    targetTrackIds.forEach((tId) => {
+      const track = tracks.find((t) => t.id === tId);
+      if (track?.isLocked) return;
+
+      const trackClips = updated
+        .filter((c) => c.trackId === tId)
+        .sort((a, b) => a.start - b.start);
+
+      if (trackClips.length <= 1 && (trackClips.length === 0 || trackClips[0].start === 0)) return;
+
+      let runningEnd = 0;
+      const closedTrackClips = trackClips.map((c, i) => {
+        if (i === 0 && c.start > 0) {
+          totalGapsClosed++;
+        } else if (i > 0 && Math.abs(c.start - runningEnd) > 0.05) {
+          totalGapsClosed++;
+        }
+        const updatedClip = {
+          ...c,
+          start: Math.round(runningEnd * 100) / 100,
+        };
+        runningEnd += c.duration;
+        return updatedClip;
+      });
+
+      const map = new Map(closedTrackClips.map((c) => [c.id, c]));
+      updated = updated.map((c) => map.get(c.id) || c);
+    });
+
+    if (totalGapsClosed > 0) {
+      setClips(updated);
+      pushHistory(updated);
+      soundEngine.playEffect('pop');
+      showToast(
+        language === 'km'
+          ? targetTrackId
+            ? 'បានភ្ជាប់ Clips ក្នុង Track នេះដោយជោគជ័យ'
+            : 'បានភ្ជាប់ Clips គ្រប់ Tracks ទាំងអស់ដោយជោគជ័យ!'
+          : targetTrackId
+          ? 'Gaps closed on this track'
+          : 'All gaps closed across all tracks!'
+      );
+    } else {
+      showToast(
+        language === 'km'
+          ? 'មិនមានចន្លោះទទេរវាង Clips ទេ (ភ្ជាប់រួចរាល់)'
+          : 'No gaps found between clips'
+      );
+    }
   };
 
   // 4. Duplicate clip
@@ -463,6 +716,111 @@ export default function App() {
     setClips(updated);
   };
 
+  // Reorder or finish moving clip on track (CapCut left-to-right / right-to-left reordering & snapping)
+  const handleFinishClipDrag = (
+    clipId: string,
+    finalStart: number,
+    finalDuration: number,
+    targetTrackId?: string
+  ) => {
+    const targetClip = clips.find((c) => c.id === clipId);
+    if (!targetClip) return;
+
+    const trackId = targetTrackId || targetClip.trackId;
+    const track = tracks.find((t) => t.id === trackId);
+    if (track?.isLocked) {
+      showToast(language === 'km' ? 'ជួរ Track នេះត្រូវបានចាក់សោ' : 'Track is locked');
+      return;
+    }
+
+    const otherTracksClips = clips.filter((c) => c.id !== clipId && c.trackId !== trackId);
+    const thisTracksOtherClips = clips
+      .filter((c) => c.id !== clipId && c.trackId === trackId)
+      .sort((a, b) => a.start - b.start);
+
+    let updatedThisTrack: TimelineClip[];
+
+    // Only primary video tracks with isAutoConnect use sequence reordering
+    const isMagneticTrack = isAutoConnect && track?.type === 'video';
+
+    if (isMagneticTrack && thisTracksOtherClips.length > 0) {
+      // Magnetic Reorder: Insert clip into new sequence position along the track
+      // CapCut logic: Check both drag center and leading edge threshold so moving left-to-right or right-to-left reorders reliably
+      const dragCenter = finalStart + finalDuration / 2;
+      let insertIndex = thisTracksOtherClips.length;
+
+      for (let i = 0; i < thisTracksOtherClips.length; i++) {
+        const c = thisTracksOtherClips[i];
+        const mid = c.start + c.duration / 2;
+        if (dragCenter < mid || finalStart < c.start + c.duration * 0.35) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      const updatedTargetClip: TimelineClip = {
+        ...targetClip,
+        trackId,
+        duration: finalDuration,
+      };
+
+      const newSequence = [...thisTracksOtherClips];
+      newSequence.splice(insertIndex, 0, updatedTargetClip);
+
+      let runningStart = 0;
+      updatedThisTrack = newSequence.map((c) => {
+        const updated = {
+          ...c,
+          start: Math.round(runningStart * 100) / 100,
+        };
+        runningStart += c.duration;
+        return updated;
+      });
+    } else {
+      // Free Move on Track (Audio, SFX, Text, Overlay, or when Auto-Connect is off):
+      // Snap to nearest edge if close (0s, playhead, neighbor edges), preserving exact user placement
+      let snappedStart = Math.max(0, finalStart);
+      const snapCandidates: number[] = [0, currentTime];
+      thisTracksOtherClips.forEach((c) => {
+        snapCandidates.push(c.start);
+        snapCandidates.push(c.start + c.duration);
+        snapCandidates.push(Math.max(0, c.start - finalDuration));
+      });
+
+      for (const cand of snapCandidates) {
+        if (cand >= 0 && Math.abs(snappedStart - cand) <= 0.2) {
+          snappedStart = cand;
+          break;
+        }
+      }
+
+      const updatedTargetClip: TimelineClip = {
+        ...targetClip,
+        trackId,
+        start: Math.round(snappedStart * 100) / 100,
+        duration: finalDuration,
+      };
+
+      updatedThisTrack = [...thisTracksOtherClips, updatedTargetClip].sort((a, b) => a.start - b.start);
+    }
+
+    const finalClips = [...otherTracksClips, ...updatedThisTrack];
+    setClips(finalClips);
+    pushHistory(finalClips);
+    setSelectedClipId(clipId);
+    soundEngine.playEffect('pop');
+    showToast(
+      language === 'km'
+        ? 'បានផ្លាស់ប្ដូរទីតាំង Clip លើ Track ដោយជោគជ័យ'
+        : 'Clip moved & reordered successfully'
+    );
+  };
+  handleFinishClipDragRef.current = handleFinishClipDrag;
+
+  const handleFinishClipTrim = () => {
+    pushHistory(clips);
+  };
+
   // 6. Add Media to Timeline
   const handleAddMediaToTimeline = (item: MediaItem) => {
     // Ensure item is also present in mediaLibrary
@@ -487,55 +845,57 @@ export default function App() {
 
     const targetTrackId = targetTrack.id;
 
-    // Position clip at currentTime if playhead is past 0, else at lastEnd
-    const trackClips = clips.filter((c) => c.trackId === targetTrackId);
-    const lastEnd = trackClips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
-    const clipStart = currentTime > 0 ? currentTime : lastEnd;
+    setClips((prevClips) => {
+      const trackClips = prevClips.filter((c) => c.trackId === targetTrackId);
+      const lastEnd = trackClips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
+      const clipStart = currentTime > 0 ? currentTime : lastEnd;
 
-    const newClip: TimelineClip = {
-      id: `clip-${Date.now()}`,
-      trackId: targetTrackId,
-      mediaId: item.id,
-      mediaUrl: item.url, // Real audio source URL (Gemini WAV / MP3 / WebM)
-      title: item.name,
-      type: item.type,
-      start: Math.round(clipStart * 100) / 100,
-      duration: item.duration || 5,
-      sourceStart: 0,
-      sourceDuration: item.duration || 10,
-      speed: 1,
-      volume: 1,
-      fadeIn: 0.05,
-      fadeOut: 0.05,
-      transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
-      filters: {
-        brightness: 100,
-        contrast: 100,
-        saturate: 100,
-        blur: 0,
-        hueRotate: 0,
-        sepia: 0,
-        grayscale: 0,
-        vignette: 0,
-        preset: 'none',
-      },
-      audioWaveform:
-        item.waveform ||
-        (item.type === 'audio' || item.type === 'video' ? generateWaveformPeaks(50) : undefined),
-      color:
-        item.category === 'voiceover'
-          ? '#d946ef' // Bright magenta/pink for Gemini TTS Voiceover!
-          : item.type === 'video'
-          ? '#0284c7'
-          : item.type === 'audio'
-          ? '#8b5cf6'
-          : '#06b6d4',
-    };
+      const newClip: TimelineClip = {
+        id: `clip-${Date.now()}`,
+        trackId: targetTrackId,
+        mediaId: item.id,
+        mediaUrl: item.url, // Real audio source URL (Gemini WAV / MP3 / WebM)
+        title: item.name,
+        type: item.type,
+        start: Math.round(clipStart * 100) / 100,
+        duration: item.duration || 5,
+        sourceStart: 0,
+        sourceDuration: item.duration || 10,
+        speed: 1,
+        volume: 1,
+        fadeIn: 0.05,
+        fadeOut: 0.05,
+        transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
+        filters: {
+          brightness: 100,
+          contrast: 100,
+          saturate: 100,
+          blur: 0,
+          hueRotate: 0,
+          sepia: 0,
+          grayscale: 0,
+          vignette: 0,
+          preset: 'none',
+        },
+        audioWaveform:
+          item.waveform ||
+          (item.type === 'audio' || item.type === 'video' ? generateWaveformPeaks(50) : undefined),
+        color:
+          item.category === 'voiceover'
+            ? '#d946ef' // Bright magenta/pink for Gemini TTS Voiceover!
+            : item.type === 'video'
+            ? '#0284c7'
+            : item.type === 'audio'
+            ? '#8b5cf6'
+            : '#06b6d4',
+      };
 
-    const updated = [...clips, newClip];
-    setClips(updated);
-    pushHistory(updated);
-    setSelectedClipId(newClip.id);
+      const updated = [...prevClips, newClip];
+      pushHistory(updated);
+      setSelectedClipId(newClip.id);
+      return updated;
+    });
+
     soundEngine.playEffect('pop');
     showToast(
       language === 'km'
@@ -544,65 +904,204 @@ export default function App() {
     );
   };
 
+  // 6b. Add Voiceover with synchronized Subtitles atomically (100% guarantee audio is not lost)
+  const handleAddVoiceoverToTimeline = (
+    item: MediaItem,
+    subtitleText?: string,
+    customStyleConfig?: TextConfig
+  ) => {
+    // Ensure item is in mediaLibrary
+    setMediaLibrary((prev) => {
+      if (!prev.some((m) => m.id === item.id)) {
+        return [item, ...prev];
+      }
+      return prev;
+    });
+
+    let targetTrack = tracks.find((t) => t.id === 'track-a2' || t.type === 'sfx' || t.type === 'audio') || tracks[0];
+    const targetTrackId = targetTrack.id;
+
+    setClips((prevClips) => {
+      const trackClips = prevClips.filter((c) => c.trackId === targetTrackId);
+      const lastEnd = trackClips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
+      const clipStart = currentTime > 0 ? currentTime : lastEnd;
+      const roundedStart = Math.round(clipStart * 100) / 100;
+      const dur = item.duration || 5;
+
+      const audioClip: TimelineClip = {
+        id: `clip-voice-${Date.now()}`,
+        trackId: targetTrackId,
+        mediaId: item.id,
+        mediaUrl: item.url,
+        title: item.name,
+        type: 'audio',
+        start: roundedStart,
+        duration: dur,
+        sourceStart: 0,
+        sourceDuration: dur,
+        speed: 1,
+        volume: 1,
+        fadeIn: 0.05,
+        fadeOut: 0.05,
+        transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
+        filters: {
+          brightness: 100,
+          contrast: 100,
+          saturate: 100,
+          blur: 0,
+          hueRotate: 0,
+          sepia: 0,
+          grayscale: 0,
+          vignette: 0,
+          preset: 'none',
+        },
+        audioWaveform:
+          item.waveform || generateWaveformPeaks(Math.max(24, Math.floor(dur * 6))),
+        color: '#d946ef',
+      };
+
+      const updated = [...prevClips, audioClip];
+
+      if (subtitleText && subtitleText.trim()) {
+        const chosenPresetId = customStyleConfig?.stylePreset || activeCaptionStyleId;
+        const preset = getCaptionStyleById(chosenPresetId);
+        const chosenWordStyle = customStyleConfig?.wordStyle || activeWordStyle || 'word-by-word';
+        const chosenHighlight = customStyleConfig?.highlightColor || activeHighlightColor || '#ffe600';
+
+        const subClip: TimelineClip = {
+          id: `ai-sub-${Date.now()}`,
+          trackId: 'track-text',
+          mediaId: `sub-text-${Date.now()}`,
+          title: subtitleText.trim().slice(0, 24),
+          type: 'text',
+          start: roundedStart,
+          duration: dur,
+          sourceStart: 0,
+          sourceDuration: dur,
+          speed: 1,
+          volume: 0,
+          fadeIn: 0.05,
+          fadeOut: 0.05,
+          transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
+          filters: {
+            brightness: 100,
+            contrast: 100,
+            saturate: 100,
+            blur: 0,
+            hueRotate: 0,
+            sepia: 0,
+            grayscale: 0,
+            vignette: 0,
+            preset: 'none',
+          },
+          textConfig: {
+            ...preset.config,
+            ...(customStyleConfig || {}),
+            text: subtitleText.trim(),
+            wordStyle: chosenWordStyle,
+            animation: chosenWordStyle as any,
+            highlightColor: chosenHighlight,
+            stylePreset: chosenPresetId,
+            isCaption: true,
+          },
+          color: chosenHighlight === '#ffe600' ? '#eab308' : chosenHighlight || '#eab308',
+        };
+        updated.push(subClip);
+      }
+
+      pushHistory(updated);
+      setSelectedClipId(audioClip.id);
+      return updated;
+    });
+
+    soundEngine.playEffect('pop');
+    showToast(
+      language === 'km'
+        ? `បានដាក់ទាំងសំឡេង AI (Track A2) ${subtitleText ? 'និង Subtitles' : ''} ចូល Timeline!`
+        : `Added both AI Audio (Track A2) ${subtitleText ? '& Subtitles' : ''} to Timeline!`
+    );
+  };
+
   // 7. Add Text Clip
   const handleAddTextClip = (textConfig: TextConfig, title: string) => {
-    const trackClips = clips.filter((c) => c.trackId === 'track-text');
-    const lastEnd = trackClips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
+    setClips((prevClips) => {
+      const trackClips = prevClips.filter((c) => c.trackId === 'track-text');
+      const lastEnd = trackClips.reduce((max, c) => Math.max(max, c.start + c.duration), 0);
 
-    const newClip: TimelineClip = {
-      id: `text-${Date.now()}`,
-      trackId: 'track-text',
-      mediaId: `text-media-${Date.now()}`,
-      title,
-      type: 'text',
-      start: lastEnd > 0 ? lastEnd : currentTime,
-      duration: 3.5,
-      sourceStart: 0,
-      sourceDuration: 3.5,
-      speed: 1,
-      volume: 0,
-      fadeIn: 0.1,
-      fadeOut: 0.1,
-      transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
-      filters: {
-        brightness: 100,
-        contrast: 100,
-        saturate: 100,
-        blur: 0,
-        hueRotate: 0,
-        sepia: 0,
-        grayscale: 0,
-        vignette: 0,
-        preset: 'none',
-      },
-      textConfig,
-      color: '#eab308',
-    };
+      const newClip: TimelineClip = {
+        id: `text-${Date.now()}`,
+        trackId: 'track-text',
+        mediaId: `text-media-${Date.now()}`,
+        title,
+        type: 'text',
+        start: lastEnd > 0 ? lastEnd : currentTime,
+        duration: 3.5,
+        sourceStart: 0,
+        sourceDuration: 3.5,
+        speed: 1,
+        volume: 0,
+        fadeIn: 0.1,
+        fadeOut: 0.1,
+        transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
+        filters: {
+          brightness: 100,
+          contrast: 100,
+          saturate: 100,
+          blur: 0,
+          hueRotate: 0,
+          sepia: 0,
+          grayscale: 0,
+          vignette: 0,
+          preset: 'none',
+        },
+        textConfig,
+        color: '#eab308',
+      };
 
-    const updated = [...clips, newClip];
-    setClips(updated);
-    pushHistory(updated);
-    setSelectedClipId(newClip.id);
+      const updated = [...prevClips, newClip];
+      pushHistory(updated);
+      setSelectedClipId(newClip.id);
+      return updated;
+    });
     showToast('Text added to timeline');
   };
 
-  // 8. Add Subtitles Array from AI Transcriber
-  const handleAddSubtitlesToTimeline = (subtitles: SubtitleItem[]) => {
+  // 8. Add Subtitles Array from AI Transcriber (CapCut Auto Captions)
+  const handleAddSubtitlesToTimeline = (
+    subtitles: SubtitleItem[],
+    styleConfig?: TextConfig,
+    append: boolean = false
+  ) => {
+    const chosenPresetId = styleConfig?.stylePreset || activeCaptionStyleId;
+    const preset = getCaptionStyleById(chosenPresetId);
+    const chosenWordStyle = styleConfig?.wordStyle || activeWordStyle || 'word-by-word';
+    const chosenHighlight = styleConfig?.highlightColor || activeHighlightColor || '#ffe600';
+
+    const defaultCaptionConfig: TextConfig = {
+      ...preset.config,
+      ...(styleConfig || {}),
+      wordStyle: chosenWordStyle,
+      animation: chosenWordStyle as any,
+      highlightColor: chosenHighlight,
+      stylePreset: chosenPresetId,
+      isCaption: true,
+    };
+
     const subClips: TimelineClip[] = subtitles.map((sub, idx) => ({
       id: `ai-sub-${Date.now()}-${idx}`,
       trackId: 'track-text',
       mediaId: `sub-text-${idx}`,
-      title: sub.text.slice(0, 20),
+      title: sub.text.slice(0, 24),
       type: 'text',
       start: sub.start,
-      duration: Math.max(1.2, sub.end - sub.start),
+      duration: Math.max(1.0, sub.end - sub.start),
       sourceStart: 0,
-      sourceDuration: sub.end - sub.start,
+      sourceDuration: Math.max(1.0, sub.end - sub.start),
       speed: 1,
       volume: 0,
       fadeIn: 0.05,
       fadeOut: 0.05,
-      transform: { x: 0, y: 35, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
+      transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blendMode: 'normal' },
       filters: {
         brightness: 100,
         contrast: 100,
@@ -615,29 +1114,98 @@ export default function App() {
         preset: 'none',
       },
       textConfig: {
+        ...defaultCaptionConfig,
         text: sub.text,
-        fontSize: 28,
-        fontFamily: 'Kantumruy Pro',
-        color: '#facc15',
-        strokeColor: '#000000',
-        strokeWidth: 3.5,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        animation: 'bounce',
-        align: 'center',
-        yPercent: 78,
+        isCaption: true,
       },
       color: '#eab308',
     }));
 
-    // Replace old subtitle clips
-    const nonTextClips = clips.filter((c) => c.trackId !== 'track-text');
-    const updated = [...nonTextClips, ...subClips];
-    setClips(updated);
-    pushHistory(updated);
+    setClips((prevClips) => {
+      const baseClips = append ? prevClips : prevClips.filter((c) => c.trackId !== 'track-text');
+      const updated = [...baseClips, ...subClips];
+      pushHistory(updated);
+      if (subClips.length > 0) {
+        setSelectedClipId(subClips[0].id);
+      }
+      return updated;
+    });
+
+    soundEngine.playEffect('pop');
     showToast(
       language === 'km'
-        ? `បានបន្ថែម Subtitle ${subtitles.length} ប្រយោគលើ Timeline!`
-        : `Added ${subtitles.length} AI captions to timeline!`
+        ? `បានបង្កើត Auto Captions ចំនួន ${subtitles.length} ប្រយោគលើ Timeline!`
+        : `Generated ${subtitles.length} Auto Captions on timeline!`
+    );
+  };
+
+  // Apply Caption style to ALL subtitles in the project (CapCut 1-Click Feature)
+  const handleApplyStyleToAllCaptions = (styleUpdate: Partial<TextConfig>) => {
+    let affectedCount = 0;
+    const updated = clips.map((c) => {
+      if (c.trackId === 'track-text' || c.type === 'text') {
+        affectedCount++;
+        return {
+          ...c,
+          textConfig: {
+            ...c.textConfig,
+            ...styleUpdate,
+            text: c.textConfig?.text || c.title, // keep the line's own speech words!
+          } as TextConfig,
+        };
+      }
+      return c;
+    });
+
+    if (affectedCount > 0) {
+      setClips(updated);
+      pushHistory(updated);
+      soundEngine.playEffect('pop');
+      showToast(
+        language === 'km'
+          ? `បានអនុវត្តម៉ូត Caption លើ Subtitles ទាំងអស់ (${affectedCount})!`
+          : `Applied Caption style to all ${affectedCount} subtitles!`
+      );
+    }
+  };
+
+  // Synchronize caption style selection across panels and clips
+  const handleUpdateCaptionStyle = (
+    styleId: string,
+    wordStyle?: WordAnimationStyle,
+    highlightColor?: string
+  ) => {
+    setActiveCaptionStyleId(styleId);
+    if (wordStyle) setActiveWordStyle(wordStyle);
+    if (highlightColor) setActiveHighlightColor(highlightColor);
+
+    const preset = getCaptionStyleById(styleId);
+    const chosenWordStyle = wordStyle || activeWordStyle;
+    const chosenHighlight = highlightColor || activeHighlightColor;
+
+    const styleUpdate: Partial<TextConfig> = {
+      ...preset.config,
+      wordStyle: chosenWordStyle,
+      animation: chosenWordStyle as any,
+      highlightColor: chosenHighlight,
+      stylePreset: styleId,
+    };
+    handleApplyStyleToAllCaptions(styleUpdate);
+  };
+
+  // Update single clip text content
+  const handleUpdateClipText = (clipId: string, newText: string) => {
+    setClips((prev) =>
+      prev.map((c) => {
+        if (c.id === clipId && c.textConfig) {
+          return {
+            ...c,
+            title: newText.slice(0, 24),
+            textConfig: { ...c.textConfig, text: newText },
+          };
+        }
+        return c;
+      })
     );
   };
 
@@ -995,11 +1563,37 @@ export default function App() {
           )}
 
           {activeTab === 'audio' && (
-            <AudioPanel onAddAudioToTimeline={handleAddMediaToTimeline} language={language} />
+            <AudioPanel
+              onAddAudioToTimeline={handleAddMediaToTimeline}
+              onAddVoiceoverToTimeline={handleAddVoiceoverToTimeline}
+              onAddSubtitlesToTimeline={handleAddSubtitlesToTimeline}
+              currentTime={currentTime}
+              language={language}
+              activeCaptionStyleId={activeCaptionStyleId}
+              activeWordStyle={activeWordStyle}
+              activeHighlightColor={activeHighlightColor}
+              onUpdateCaptionStyle={handleUpdateCaptionStyle}
+            />
           )}
 
           {activeTab === 'text' && (
-            <TextPanel onAddTextClip={handleAddTextClip} language={language} />
+            <TextPanel
+              clips={clips}
+              selectedClipId={selectedClipId}
+              currentTime={currentTime}
+              onSelectClip={setSelectedClipId}
+              onAddTextClip={handleAddTextClip}
+              onAddSubtitlesToTimeline={handleAddSubtitlesToTimeline}
+              onUpdateClipText={handleUpdateClipText}
+              onDeleteClip={handleDeleteClip}
+              onApplyStyleToAllCaptions={handleApplyStyleToAllCaptions}
+              onSeekToTime={(time) => setCurrentTime(time)}
+              language={language}
+              activeCaptionStyleId={activeCaptionStyleId}
+              activeWordStyle={activeWordStyle}
+              activeHighlightColor={activeHighlightColor}
+              onUpdateCaptionStyle={handleUpdateCaptionStyle}
+            />
           )}
 
           {activeTab === 'effects' && (
@@ -1045,7 +1639,10 @@ export default function App() {
           onTogglePlay={() => setIsPlaying((prev) => !prev)}
           onSeek={(time) => setCurrentTime(time)}
           onSplitAtPlayhead={() => {
-            if (selectedClipId) handleSplitClip(selectedClipId, currentTime);
+            const targetId =
+              selectedClipId ||
+              clips.find((c) => currentTime >= c.start && currentTime <= c.start + c.duration)?.id;
+            if (targetId) handleSplitClip(targetId, currentTime);
           }}
           language={language}
         />
@@ -1061,6 +1658,7 @@ export default function App() {
           onUpdateClipAudio={handleUpdateClipAudio}
           onUpdateClipSpeed={handleUpdateClipSpeed}
           onUpdateTextConfig={handleUpdateTextConfig}
+          onApplyStyleToAllCaptions={handleApplyStyleToAllCaptions}
           language={language}
         />
       </div>
@@ -1089,6 +1687,14 @@ export default function App() {
         onMoveTrackUp={handleMoveTrackUp}
         onMoveTrackDown={handleMoveTrackDown}
         onClearTrackClips={handleClearTrackClips}
+        onFinishClipDrag={handleFinishClipDrag}
+        onFinishClipTrim={handleFinishClipTrim}
+        isAutoConnect={isAutoConnect}
+        onToggleAutoConnect={() => setIsAutoConnect((prev) => !prev)}
+        onCloseGaps={handleCloseTrackGaps}
+        onSplitAllTracks={handleSplitAllTracks}
+        isPlaying={isPlaying}
+        onTogglePlay={() => setIsPlaying((prev) => !prev)}
         language={language}
       />
 

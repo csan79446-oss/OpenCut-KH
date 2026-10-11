@@ -17,6 +17,53 @@ export function getResolutionForAspectRatio(ratio: AspectRatio, quality: '720p' 
   }
 }
 
+// Tokenize text into rhythmic spoken words with smart support for English, numbers, and Khmer scripts
+export function tokenizeTextIntoWords(text: string): string[] {
+  if (!text || !text.trim()) return [];
+  const trimmed = text.trim();
+
+  // Helper to split continuous Khmer script into natural rhythmic words (1-2 syllables each)
+  const segmentKhmerToken = (token: string): string[] => {
+    // Match Khmer orthographic syllable clusters
+    const clusterRegex = /[\u1780-\u17B3][\u17B4-\u17D3]*(?:\u17D2[\u1780-\u17B3][\u17B4-\u17D3]*)*|[^\u1780-\u17FF]+/g;
+    const clusters = token.match(clusterRegex);
+    if (!clusters || clusters.length <= 2) {
+      return [token];
+    }
+    const words: string[] = [];
+    for (let i = 0; i < clusters.length; i += 2) {
+      if (i + 2 < clusters.length) {
+        words.push(clusters[i] + clusters[i + 1]);
+      } else {
+        // Last 1 or 2 clusters
+        words.push(clusters.slice(i).join(''));
+      }
+    }
+    return words.length > 0 ? words : [token];
+  };
+
+  // If text contains spaces, split on spaces and segment long Khmer compounds
+  if (/\s+/.test(trimmed)) {
+    const rawTokens = trimmed.split(/\s+/).filter(Boolean);
+    const resultWords: string[] = [];
+    for (const raw of rawTokens) {
+      if (/[\u1780-\u17FF]/.test(raw) && raw.length > 5) {
+        resultWords.push(...segmentKhmerToken(raw));
+      } else {
+        resultWords.push(raw);
+      }
+    }
+    return resultWords.length > 0 ? resultWords : rawTokens;
+  }
+
+  // Continuous Khmer script without spaces
+  if (/[\u1780-\u17FF]/.test(trimmed)) {
+    return segmentKhmerToken(trimmed);
+  }
+
+  return [trimmed];
+}
+
 /**
  * Render all active clips at a specific playhead time to a Canvas 2D context
  */
@@ -97,7 +144,10 @@ export function renderCanvasFrame(
 
     // Center pivot & transforms
     const centerX = width / 2 + (clip.transform.x / 100) * width;
-    const centerY = height / 2 + (clip.transform.y / 100) * height;
+    let centerY = height / 2 + (clip.transform.y / 100) * height;
+    if (clip.type === 'text' && clip.textConfig?.yPercent !== undefined) {
+      centerY = (clip.textConfig.yPercent / 100) * height + (clip.transform.y / 100) * height;
+    }
     ctx.translate(centerX, centerY);
 
     if (clip.transform.rotation !== 0) {
@@ -161,51 +211,279 @@ export function renderCanvasFrame(
       const cfg = clip.textConfig;
       ctx.filter = 'none'; // text should be crisp
 
-      // Animations
+      // CapCut Dynamic Animations
       let textOffsetY = 0;
       let textScale = 1;
-      if (cfg.animation === 'bounce') {
-        textOffsetY = Math.sin(clipProgress * Math.PI * 6) * 12;
-      } else if (cfg.animation === 'pop') {
-        const popTime = Math.min(1, clipAge * 4);
-        textScale = 0.5 + 0.5 * Math.sin((popTime * Math.PI) / 2);
+      let alphaMultiplier = 1;
+
+      if (cfg.animation === 'pop') {
+        const popTime = Math.min(1, clipAge * 5);
+        textScale = popTime < 0.6 ? (popTime / 0.6) * 1.15 : 1.15 - ((popTime - 0.6) / 0.4) * 0.15;
+      } else if (cfg.animation === 'bounce') {
+        textOffsetY = Math.sin(clipProgress * Math.PI * 6) * 8;
+        textScale = 1 + Math.sin(clipProgress * Math.PI * 6) * 0.04;
+      } else if (cfg.animation === 'karaoke') {
+        const wave = Math.sin(clipProgress * Math.PI * 4);
+        textScale = 1 + Math.max(0, wave) * 0.06;
+      } else if (cfg.animation === 'fade') {
+        if (clipAge < 0.25) {
+          alphaMultiplier = clipAge / 0.25;
+        } else if (clipRemaining < 0.25) {
+          alphaMultiplier = clipRemaining / 0.25;
+        }
       }
 
+      ctx.globalAlpha *= Math.max(0, Math.min(1, alphaMultiplier));
       ctx.scale(textScale, textScale);
-      ctx.font = `bold ${cfg.fontSize}px "${cfg.fontFamily || 'Inter'}", sans-serif`;
-      ctx.textAlign = (cfg.align as CanvasTextAlign) || 'center';
+
+      ctx.font = `bold ${cfg.fontSize}px "${cfg.fontFamily || 'Inter'}", -apple-system, sans-serif`;
       ctx.textBaseline = 'middle';
 
-      const metrics = ctx.measureText(cfg.text);
-      const textWidth = metrics.width;
-      const textHeight = cfg.fontSize * 1.3;
+      const maxLineWidth = width * 0.86;
+      const lineHeight = cfg.fontSize * 1.35;
 
-      // Draw background pill if configured
-      if (cfg.backgroundColor && cfg.backgroundColor !== 'transparent') {
-        ctx.fillStyle = cfg.backgroundColor;
-        const paddingX = 24;
-        const paddingY = 12;
-        const pillX = -textWidth / 2 - paddingX;
-        const pillY = textOffsetY - textHeight / 2 - paddingY / 2;
-        const pillW = textWidth + paddingX * 2;
-        const pillH = textHeight + paddingY;
-        const radius = 10;
+      // Check if word-level synchronization is enabled
+      const isWordMode =
+        cfg.wordStyle === 'word-by-word' ||
+        cfg.wordStyle === 'word-highlight' ||
+        cfg.wordStyle === 'word-bounce' ||
+        cfg.wordStyle === 'karaoke' ||
+        cfg.animation === 'word-by-word' ||
+        cfg.animation === 'word-highlight' ||
+        cfg.animation === 'word-bounce';
 
-        ctx.beginPath();
-        ctx.roundRect(pillX, pillY, pillW, pillH, radius);
-        ctx.fill();
+      const effectiveWordMode =
+        cfg.wordStyle ||
+        (cfg.animation === 'word-by-word'
+          ? 'word-by-word'
+          : cfg.animation === 'word-bounce'
+          ? 'word-bounce'
+          : cfg.animation === 'word-highlight'
+          ? 'word-highlight'
+          : 'word-highlight');
+
+      if (isWordMode) {
+        // --- 1. WORD-BY-WORD & WORD-HIGHLIGHT TIMED RENDERING ---
+        const allWords = tokenizeTextIntoWords(cfg.text);
+        const totalWords = Math.max(1, allWords.length);
+        const progress = Math.max(0, Math.min(0.999, clipAge / clip.duration));
+        const activeWordIndex = Math.min(totalWords - 1, Math.floor(progress * totalWords));
+        const wordProgress = progress * totalWords - activeWordIndex; // 0..1 inside this word
+
+        interface WordItem {
+          word: string;
+          globalIdx: number;
+          width: number;
+        }
+
+        const spaceWidth = ctx.measureText(' ').width;
+        const wordLines: WordItem[][] = [];
+        let curLine: WordItem[] = [];
+        let curLineWidth = 0;
+
+        allWords.forEach((word, idx) => {
+          const wWidth = ctx.measureText(word).width;
+          const needed = curLine.length === 0 ? wWidth : curLineWidth + spaceWidth + wWidth;
+          if (needed > maxLineWidth && curLine.length > 0) {
+            wordLines.push(curLine);
+            curLine = [{ word, globalIdx: idx, width: wWidth }];
+            curLineWidth = wWidth;
+          } else {
+            curLine.push({ word, globalIdx: idx, width: wWidth });
+            curLineWidth = needed;
+          }
+        });
+        if (curLine.length > 0) wordLines.push(curLine);
+
+        const totalBlockHeight = wordLines.length * lineHeight;
+
+        // Background box/pill behind the whole caption block if configured
+        if (cfg.backgroundColor && cfg.backgroundColor !== 'transparent') {
+          const maxMeasuredWidth = Math.max(
+            ...wordLines.map((l) =>
+              l.reduce((sum, w) => sum + w.width, 0) + Math.max(0, l.length - 1) * spaceWidth
+            )
+          );
+          const paddingX = 20;
+          const paddingY = 10;
+          const pillX = -maxMeasuredWidth / 2 - paddingX;
+          const pillY = textOffsetY - totalBlockHeight / 2 - paddingY / 2;
+          const pillW = maxMeasuredWidth + paddingX * 2;
+          const pillH = totalBlockHeight + paddingY;
+          const radius = 10;
+
+          ctx.fillStyle = cfg.backgroundColor;
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, radius);
+          ctx.fill();
+        }
+
+        ctx.textAlign = 'left';
+
+        // Render each word with individual coordinate and timing style
+        wordLines.forEach((wLine, lineIdx) => {
+          const lineY = textOffsetY - totalBlockHeight / 2 + (lineIdx + 0.5) * lineHeight;
+          const lineContentWidth =
+            wLine.reduce((sum, w) => sum + w.width, 0) + Math.max(0, wLine.length - 1) * spaceWidth;
+
+          let startX = -lineContentWidth / 2;
+          if (cfg.align === 'left') startX = -maxLineWidth / 2;
+          else if (cfg.align === 'right') startX = maxLineWidth / 2 - lineContentWidth;
+
+          let curX = startX;
+
+          wLine.forEach((item) => {
+            const isCurrent = item.globalIdx === activeWordIndex;
+            const isFuture = item.globalIdx > activeWordIndex;
+
+            // In 'word-by-word' mode: words only appear as they are spoken!
+            if (effectiveWordMode === 'word-by-word' && isFuture) {
+              curX += item.width + spaceWidth;
+              return;
+            }
+
+            ctx.save();
+
+            let wordScale = 1;
+            let wordYOffset = 0;
+            let wordColor = cfg.color || '#ffffff';
+            let wordStroke = cfg.strokeColor || '#000000';
+            let wordShadow = cfg.shadowColor || 'rgba(0,0,0,0.85)';
+            let wordShadowBlur = cfg.shadowBlur || 8;
+
+            if (isCurrent) {
+              const highlight = cfg.highlightColor || '#ffe600';
+              wordColor = highlight;
+
+              if (effectiveWordMode === 'word-bounce') {
+                wordYOffset = -Math.sin(wordProgress * Math.PI) * 14;
+                wordScale = 1.22;
+                wordShadow = highlight;
+                wordShadowBlur = 14;
+              } else if (effectiveWordMode === 'word-by-word') {
+                // Punch pop entrance
+                const pop = Math.max(0, 1 - wordProgress * 1.5);
+                wordScale = 1 + pop * 0.3;
+                wordShadow = highlight;
+                wordShadowBlur = 12;
+              } else {
+                // 'word-highlight' & 'karaoke' (CapCut / TikTok Hormozi style)
+                wordScale = 1.16;
+                wordYOffset = -2;
+                wordShadow = highlight;
+                wordShadowBlur = 12;
+
+                if (cfg.highlightBg) {
+                  ctx.fillStyle = cfg.highlightBg;
+                  ctx.beginPath();
+                  ctx.roundRect(curX - 4, lineY - lineHeight / 2 + 4, item.width + 8, lineHeight - 8, 6);
+                  ctx.fill();
+                }
+              }
+            } else if (isFuture && effectiveWordMode === 'word-highlight') {
+              // Future words in sentence are slightly softer to make current word jump out
+              ctx.globalAlpha *= 0.72;
+            }
+
+            // Word transform anchored at word center
+            const wordCenterX = curX + item.width / 2;
+            ctx.translate(wordCenterX, lineY + wordYOffset);
+            if (wordScale !== 1) {
+              ctx.scale(wordScale, wordScale);
+            }
+            ctx.translate(-wordCenterX, -(lineY + wordYOffset));
+
+            ctx.shadowColor = wordShadow;
+            ctx.shadowBlur = wordShadowBlur;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 2;
+
+            if (cfg.strokeWidth > 0 && wordStroke) {
+              ctx.strokeStyle = wordStroke;
+              ctx.lineWidth = cfg.strokeWidth;
+              ctx.lineJoin = 'round';
+              ctx.strokeText(item.word, curX, lineY);
+            }
+
+            ctx.fillStyle = wordColor;
+            ctx.fillText(item.word, curX, lineY);
+
+            ctx.restore();
+
+            curX += item.width + spaceWidth;
+          });
+        });
+      } else {
+        // --- 2. CLASSIC WHOLE-LINE RENDERING ---
+        let textToRender = cfg.text;
+        if (cfg.animation === 'typewriter') {
+          const charProgress = Math.min(1, clipAge * 3.5);
+          const chars = Math.max(1, Math.floor(charProgress * cfg.text.length));
+          textToRender = cfg.text.slice(0, chars);
+        }
+
+        ctx.textAlign = (cfg.align as CanvasTextAlign) || 'center';
+
+        const words = textToRender.split(' ');
+        const lines: string[] = [];
+        let currentLine = '';
+
+        for (const w of words) {
+          const testLine = currentLine ? `${currentLine} ${w}` : w;
+          if (ctx.measureText(testLine).width > maxLineWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = w;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) lines.push(currentLine);
+
+        const totalBlockHeight = lines.length * lineHeight;
+
+        if (cfg.backgroundColor && cfg.backgroundColor !== 'transparent') {
+          const maxMeasuredWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+          const paddingX = 20;
+          const paddingY = 10;
+          const pillX = -maxMeasuredWidth / 2 - paddingX;
+          const pillY = textOffsetY - totalBlockHeight / 2 - paddingY / 2;
+          const pillW = maxMeasuredWidth + paddingX * 2;
+          const pillH = totalBlockHeight + paddingY;
+          const radius = 10;
+
+          ctx.fillStyle = cfg.backgroundColor;
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, radius);
+          ctx.fill();
+        }
+
+        lines.forEach((line, lineIdx) => {
+          const lineY = textOffsetY - totalBlockHeight / 2 + (lineIdx + 0.5) * lineHeight;
+
+          if (cfg.shadowColor || cfg.shadowBlur) {
+            ctx.shadowColor = cfg.shadowColor || 'rgba(0,0,0,0.85)';
+            ctx.shadowBlur = cfg.shadowBlur || 8;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 2;
+          } else {
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+          }
+
+          if (cfg.strokeWidth > 0 && cfg.strokeColor) {
+            ctx.strokeStyle = cfg.strokeColor;
+            ctx.lineWidth = cfg.strokeWidth;
+            ctx.lineJoin = 'round';
+            ctx.strokeText(line, 0, lineY);
+          }
+
+          ctx.fillStyle = cfg.color || '#ffffff';
+          ctx.fillText(line, 0, lineY);
+        });
       }
 
-      // Stroke / Shadow
-      if (cfg.strokeWidth > 0 && cfg.strokeColor) {
-        ctx.strokeStyle = cfg.strokeColor;
-        ctx.lineWidth = cfg.strokeWidth;
-        ctx.strokeText(cfg.text, 0, textOffsetY);
-      }
-
-      // Text Fill
-      ctx.fillStyle = cfg.color || '#ffffff';
-      ctx.fillText(cfg.text, 0, textOffsetY);
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
 
     // Draw Vignette if filter specifies
