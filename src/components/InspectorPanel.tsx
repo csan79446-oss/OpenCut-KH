@@ -10,10 +10,25 @@ import {
   Sparkles,
   Trash2,
   Flame,
+  Zap,
+  ZoomIn,
+  ZoomOut,
+  Keyboard,
+  Play,
+  Check,
 } from 'lucide-react';
-import { ClipFilters, ClipTransform, TextConfig, TimelineClip, TimelineTrack } from '../types/editor';
+import {
+  AnimationConfig,
+  AnimationPreset,
+  ClipFilters,
+  ClipTransform,
+  TextConfig,
+  TimelineClip,
+  TimelineTrack,
+} from '../types/editor';
 import { Language, translations } from '../utils/i18n';
 import { CAPCUT_CAPTION_STYLES, CaptionStylePreset } from '../utils/captionStyles';
+import { ANIMATION_PRESETS } from './AnimationPanel';
 
 interface InspectorPanelProps {
   selectedClip: TimelineClip | null;
@@ -25,7 +40,9 @@ interface InspectorPanelProps {
   onUpdateClipAudio: (clipId: string, volume: number, fadeIn: number, fadeOut: number) => void;
   onUpdateClipSpeed: (clipId: string, speed: number) => void;
   onUpdateTextConfig: (clipId: string, textConfig: Partial<TextConfig>) => void;
+  onUpdateClipAnimation?: (clipId: string, animation: Partial<AnimationConfig>) => void;
   onApplyStyleToAllCaptions?: (config: Partial<TextConfig>) => void;
+  onPreviewAnimation?: () => void;
   language: Language;
 }
 
@@ -39,11 +56,13 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onUpdateClipAudio,
   onUpdateClipSpeed,
   onUpdateTextConfig,
+  onUpdateClipAnimation,
   onApplyStyleToAllCaptions,
+  onPreviewAnimation,
   language,
 }) => {
   const t = translations[language];
-  const [activeTab, setActiveTab] = useState<'transform' | 'audio' | 'speed' | 'color' | 'text'>(
+  const [activeTab, setActiveTab] = useState<'transform' | 'animation' | 'text' | 'audio' | 'speed' | 'color'>(
     selectedClip?.type === 'text' ? 'text' : 'transform'
   );
 
@@ -117,6 +136,15 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           }`}
         >
           Transform
+        </button>
+
+        <button
+          onClick={() => setActiveTab('animation')}
+          className={`flex-1 py-1.5 rounded text-[11px] font-medium transition ${
+            activeTab === 'animation' ? 'bg-cyan-600/30 text-cyan-300 font-semibold' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          Animation
         </button>
 
         {type === 'text' && (
@@ -277,7 +305,179 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           </div>
         )}
 
-        {/* 2. TEXT & CAPTION TAB (CapCut Inspector) */}
+        {/* 2. ANIMATION TAB (CapCut Animation Presets) */}
+        {activeTab === 'animation' && (
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-300 font-semibold text-xs flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{language === 'km' ? 'ចលនា Clip (Animation Presets)' : 'Clip Animation Presets'}</span>
+              </span>
+
+              {onPreviewAnimation && (
+                <button
+                  onClick={onPreviewAnimation}
+                  className="flex items-center space-x-1 px-2 py-0.5 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold transition active:scale-95 cursor-pointer"
+                  title="Play from start of clip"
+                >
+                  <Play className="w-2.5 h-2.5 fill-current" />
+                  <span>{language === 'km' ? 'មើលចលនា' : 'Preview'}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Presets Grid */}
+            <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
+              {ANIMATION_PRESETS.map((pst) => {
+                const Icon = pst.icon;
+                const isSelected =
+                  (selectedClip.animation?.preset || selectedClip.textConfig?.animation) === pst.id;
+
+                return (
+                  <button
+                    key={pst.id}
+                    onClick={() => {
+                      const cfg: AnimationConfig = {
+                        preset: pst.id,
+                        duration: selectedClip.animation?.duration || 0.6,
+                        zoomStart: 1.0,
+                        zoomEnd: selectedClip.animation?.zoomEnd || 1.35,
+                        typewriterSpeed: selectedClip.animation?.typewriterSpeed || 20,
+                        springTension: selectedClip.animation?.springTension || 1.2,
+                      };
+                      onUpdateClipAnimation?.(selectedClip.id, cfg);
+                      if (selectedClip.type === 'text') {
+                        onUpdateTextConfig(selectedClip.id, {
+                          animation: pst.id,
+                          animationConfig: cfg,
+                        });
+                      }
+                    }}
+                    className={`p-2 rounded-lg border text-left transition flex flex-col justify-between cursor-pointer ${
+                      isSelected
+                        ? 'bg-cyan-950/50 border-cyan-400 text-cyan-200 shadow-sm'
+                        : 'bg-[#181a28] border-[#27293d] hover:bg-[#1e2034] text-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-cyan-400' : 'text-gray-400'}`} />
+                      {isSelected && <Check className="w-3 h-3 text-cyan-400" />}
+                    </div>
+                    <span className="font-bold text-[11px] truncate mt-1">
+                      {language === 'km' ? pst.nameKm : pst.nameEn}
+                    </span>
+                    <span className="text-[9px] text-gray-500 font-mono truncate">{pst.badge}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Animation Duration Slider */}
+            <div>
+              <div className="flex justify-between text-gray-300 mb-1">
+                <span>{language === 'km' ? 'ថិរវេលាចលនា (Duration)' : 'Entrance Duration'}</span>
+                <span className="font-mono text-cyan-400 font-bold">
+                  {(selectedClip.animation?.duration || 0.6).toFixed(2)}s
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0.2"
+                max="2.5"
+                step="0.05"
+                value={selectedClip.animation?.duration || 0.6}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  onUpdateClipAnimation?.(selectedClip.id, { duration: val });
+                }}
+                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded-lg"
+              />
+            </div>
+
+            {/* Specific Typewriter controls */}
+            {((selectedClip.animation?.preset || selectedClip.textConfig?.animation) === 'typewriter' || selectedClip.type === 'text') && (
+              <div>
+                <div className="flex justify-between text-gray-300 mb-1">
+                  <span>{language === 'km' ? 'ល្បឿនវាយអក្សរ' : 'Typewriter Speed'}</span>
+                  <span className="font-mono text-cyan-400 font-bold">
+                    {selectedClip.animation?.typewriterSpeed || selectedClip.textConfig?.animationConfig?.typewriterSpeed || 20} chars/s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="8"
+                  max="45"
+                  step="1"
+                  value={selectedClip.animation?.typewriterSpeed || selectedClip.textConfig?.animationConfig?.typewriterSpeed || 20}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    onUpdateClipAnimation?.(selectedClip.id, { typewriterSpeed: val });
+                    if (selectedClip.textConfig) {
+                      onUpdateTextConfig(selectedClip.id, {
+                        animationConfig: {
+                          ...(selectedClip.textConfig.animationConfig || { preset: 'typewriter' }),
+                          typewriterSpeed: val,
+                        },
+                      });
+                    }
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded-lg"
+                />
+              </div>
+            )}
+
+            {/* Specific Keyframe Zoom Intensity */}
+            {((selectedClip.animation?.preset || selectedClip.textConfig?.animation) === 'keyframe-zoom-in' ||
+              (selectedClip.animation?.preset || selectedClip.textConfig?.animation) === 'keyframe-zoom-out') && (
+              <div>
+                <div className="flex justify-between text-gray-300 mb-1">
+                  <span>{language === 'km' ? 'កម្រិត Zoom ពង្រីក' : 'Zoom Intensity'}</span>
+                  <span className="font-mono text-cyan-400 font-bold">
+                    {(selectedClip.animation?.zoomEnd || 1.35).toFixed(2)}x
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1.1"
+                  max="2.2"
+                  step="0.05"
+                  value={selectedClip.animation?.zoomEnd || 1.35}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    onUpdateClipAnimation?.(selectedClip.id, { zoomEnd: val });
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded-lg"
+                />
+              </div>
+            )}
+
+            {/* Specific Spring Tension */}
+            {(selectedClip.animation?.preset || selectedClip.textConfig?.animation) === 'spring-pop' && (
+              <div>
+                <div className="flex justify-between text-gray-300 mb-1">
+                  <span>{language === 'km' ? 'កម្លាំង Spring Elastic' : 'Spring Elastic Tension'}</span>
+                  <span className="font-mono text-cyan-400 font-bold">
+                    {(selectedClip.animation?.springTension || 1.2).toFixed(1)}x
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={selectedClip.animation?.springTension || 1.2}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    onUpdateClipAnimation?.(selectedClip.id, { springTension: val });
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded-lg"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. TEXT & CAPTION TAB (CapCut Inspector) */}
         {activeTab === 'text' && textConfig && (
           <div className="space-y-4">
             {/* Quick CapCut Style Presets Picker */}
@@ -490,10 +690,16 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 }
                 className="w-full bg-[#1b1c2b] border border-[#2b2e44] focus:border-cyan-500 rounded p-1.5 text-xs text-gray-200 cursor-pointer"
               >
-                <option value="pop">⚡ Pop Bounce (CapCut Viral Hook)</option>
+                <option value="typewriter">⌨️ Typewriter Letter-by-Letter (CapCut)</option>
+                <option value="spring-pop">⚡ Spring Pop (Elastic Damped Bounce)</option>
+                <option value="keyframe-zoom-in">🔍 Keyframe Zoom In (Ken Burns Push)</option>
+                <option value="keyframe-zoom-out">🔎 Keyframe Zoom Out (Pull Back)</option>
+                <option value="pop">💥 Pop Bounce (CapCut Viral Hook)</option>
                 <option value="bounce">🔥 Kinetic Pulse (MrBeast Style)</option>
+                <option value="slide-up">⬆️ Smooth Slide Up</option>
+                <option value="slide-left">➡️ Smooth Slide Left</option>
+                <option value="glitch">⚡ Glitch Flash Cyber</option>
                 <option value="karaoke">🎤 Karaoke Wave Glow</option>
-                <option value="typewriter">⌨️ Typewriter Letter-by-Letter</option>
                 <option value="fade">✨ Smooth Cinema Fade</option>
                 <option value="none">Static None</option>
               </select>

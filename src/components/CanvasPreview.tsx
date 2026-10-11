@@ -9,9 +9,10 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { AspectRatio, TimelineClip, TimelineTrack } from '../types/editor';
+import { AspectRatio, MediaItem, TimelineClip, TimelineTrack } from '../types/editor';
 import { renderCanvasFrame, getResolutionForAspectRatio } from '../utils/videoRenderer';
 import { Language } from '../utils/i18n';
+import { SAMPLE_MEDIA } from '../utils/sampleData';
 
 interface CanvasPreviewProps {
   aspectRatio: AspectRatio;
@@ -21,6 +22,7 @@ interface CanvasPreviewProps {
   clips: TimelineClip[];
   tracks: TimelineTrack[];
   selectedClipId: string | null;
+  mediaLibrary?: MediaItem[];
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onSplitAtPlayhead: () => void;
@@ -35,6 +37,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   clips,
   tracks,
   selectedClipId,
+  mediaLibrary = SAMPLE_MEDIA,
   onTogglePlay,
   onSeek,
   onSplitAtPlayhead,
@@ -56,12 +59,14 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   useEffect(() => {
     clips.forEach((clip) => {
       if (!mediaCache.current.has(clip.mediaId)) {
+        // Resolve URL from mediaLibrary or clip.mediaId
+        const foundMedia = mediaLibrary.find((m) => m.id === clip.mediaId);
+        const resolvedUrl = foundMedia?.url || (clip.mediaId.startsWith('http') ? clip.mediaId : null);
+
         if (clip.type === 'video') {
           const video = document.createElement('video');
           video.crossOrigin = 'anonymous';
-          video.src = clip.mediaId.startsWith('http')
-            ? clip.mediaId
-            : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+          video.src = resolvedUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
           video.preload = 'auto';
           video.muted = true;
           video.playsInline = true;
@@ -70,14 +75,12 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         } else if (clip.type === 'image') {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          img.src = clip.mediaId.startsWith('http')
-            ? clip.mediaId
-            : 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=500&auto=format&fit=crop&q=80';
+          img.src = resolvedUrl || 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=500&auto=format&fit=crop&q=80';
           mediaCache.current.set(clip.mediaId, img);
         }
       }
     });
-  }, [clips]);
+  }, [clips, mediaLibrary]);
 
   // Draw current frame on canvas
   useEffect(() => {

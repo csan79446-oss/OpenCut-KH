@@ -33,6 +33,33 @@ export interface ClipFilters {
   preset: string; // 'none' | 'cinematic' | 'cyberpunk' | 'vintage' | 'noir' | 'warm'
 }
 
+export type AnimationPreset =
+  | 'none'
+  | 'typewriter'
+  | 'spring-pop'
+  | 'keyframe-zoom-in'
+  | 'keyframe-zoom-out'
+  | 'pop'
+  | 'bounce'
+  | 'fade'
+  | 'slide-up'
+  | 'slide-down'
+  | 'slide-left'
+  | 'glitch'
+  | 'karaoke'
+  | 'word-by-word'
+  | 'word-highlight'
+  | 'word-bounce';
+
+export interface AnimationConfig {
+  preset: AnimationPreset;
+  duration?: number; // duration of in-animation in seconds (default 0.6s)
+  zoomStart?: number; // keyframe zoom start scale (default 1.0)
+  zoomEnd?: number; // keyframe zoom end scale (default 1.35)
+  typewriterSpeed?: number; // characters per second (default 20)
+  springTension?: number; // spring stiffness multiplier (default 1.0)
+}
+
 export type WordAnimationStyle =
   | 'none'
   | 'word-by-word'
@@ -48,16 +75,8 @@ export interface TextConfig {
   strokeColor: string;
   strokeWidth: number;
   backgroundColor: string;
-  animation:
-    | 'none'
-    | 'bounce'
-    | 'fade'
-    | 'karaoke'
-    | 'typewriter'
-    | 'pop'
-    | 'word-by-word'
-    | 'word-highlight'
-    | 'word-bounce';
+  animation: AnimationPreset;
+  animationConfig?: AnimationConfig;
   align: 'left' | 'center' | 'right';
   yPercent: number; // position from top (e.g. 78% for subtitles, 25% for titles)
   shadowColor?: string;
@@ -87,9 +106,11 @@ export interface TimelineClip {
   transform: ClipTransform;
   filters: ClipFilters;
   textConfig?: TextConfig;
+  animation?: AnimationConfig;
   audioWaveform?: number[];
   color: string;
   transitionIn?: 'crossfade' | 'zoom' | 'flash' | 'slide' | 'none';
+  ttsText?: string; // Original spoken text if generated from AI voice
 }
 
 export interface MediaItem {
@@ -103,6 +124,7 @@ export interface MediaItem {
   thumbnail?: string;
   waveform?: number[];
   category?: string;
+  ttsText?: string; // Spoken text for AI voiceovers
 }
 
 export interface SilenceSegment {

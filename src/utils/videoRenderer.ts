@@ -108,17 +108,18 @@ export function renderCanvasFrame(
     ctx.save();
 
     // Calculate clip relative progress
-    const clipProgress = (currentTime - clip.start) / clip.duration;
+    const clipProgress = clip.duration > 0 ? (currentTime - clip.start) / clip.duration : 0;
     const clipAge = currentTime - clip.start;
     const clipRemaining = clip.start + clip.duration - currentTime;
 
-    // Apply Fade In / Fade Out opacity
+    // Apply Fade In / Fade Out opacity (prevent pitch black screen at t=0 when editor loads)
     let dynamicOpacity = clip.transform.opacity ?? 1;
     if (clip.fadeIn > 0 && clipAge < clip.fadeIn) {
-      dynamicOpacity *= clipAge / clip.fadeIn;
+      const minStartOpacity = currentTime === 0 ? 0.95 : 0.05;
+      dynamicOpacity *= Math.max(minStartOpacity, clipAge / clip.fadeIn);
     }
     if (clip.fadeOut > 0 && clipRemaining < clip.fadeOut) {
-      dynamicOpacity *= clipRemaining / clip.fadeOut;
+      dynamicOpacity *= Math.max(0, clipRemaining / clip.fadeOut);
     }
 
     ctx.globalAlpha = Math.max(0, Math.min(1, dynamicOpacity));
@@ -143,10 +144,57 @@ export function renderCanvasFrame(
     }
 
     // Center pivot & transforms
-    const centerX = width / 2 + (clip.transform.x / 100) * width;
-    let centerY = height / 2 + (clip.transform.y / 100) * height;
+    let animOffsetX = 0;
+    let animOffsetY = 0;
+    let animScale = 1;
+
+    // Clip-level CapCut Animation Preset (Works on Video, Image, and Text clips!)
+    const clipAnim = clip.animation;
+    if (clipAnim && clipAnim.preset !== 'none') {
+      const animDur = clipAnim.duration || 0.6;
+      const zStart = clipAnim.zoomStart ?? 1.0;
+      const zEnd = clipAnim.zoomEnd ?? 1.35;
+      const tension = clipAnim.springTension ?? 1.0;
+
+      if (clipAnim.preset === 'spring-pop') {
+        // Authentic physics-based damped harmonic spring (CapCut Spring Pop)
+        if (clipAge < animDur) {
+          const p = Math.max(0, Math.min(1, clipAge / animDur));
+          const spring = 1 - Math.exp(-6 * p * tension) * Math.cos(p * Math.PI * 4 * tension);
+          animScale *= Math.max(0.01, spring);
+        }
+      } else if (clipAnim.preset === 'keyframe-zoom-in') {
+        // Cinematic Ken Burns slow zoom-in push
+        const smoothP = Math.min(1, Math.max(0, clipProgress));
+        animScale *= zStart + (zEnd - zStart) * (smoothP * (2 - smoothP));
+      } else if (clipAnim.preset === 'keyframe-zoom-out') {
+        // Cinematic Ken Burns slow zoom-out pull
+        const smoothP = Math.min(1, Math.max(0, clipProgress));
+        animScale *= zEnd - (zEnd - zStart) * (smoothP * (2 - smoothP));
+      } else if (clipAnim.preset === 'slide-up') {
+        if (clipAge < animDur) {
+          const p = clipAge / animDur;
+          const easeP = 1 - Math.pow(1 - p, 3);
+          animOffsetY += (1 - easeP) * (height * 0.15);
+        }
+      } else if (clipAnim.preset === 'slide-left') {
+        if (clipAge < animDur) {
+          const p = clipAge / animDur;
+          const easeP = 1 - Math.pow(1 - p, 3);
+          animOffsetX += (1 - easeP) * (width * 0.2);
+        }
+      } else if (clipAnim.preset === 'glitch') {
+        if (clipAge < 0.35) {
+          animOffsetX += (Math.random() - 0.5) * 14;
+          animOffsetY += (Math.random() - 0.5) * 8;
+        }
+      }
+    }
+
+    const centerX = width / 2 + (clip.transform.x / 100) * width + animOffsetX;
+    let centerY = height / 2 + (clip.transform.y / 100) * height + animOffsetY;
     if (clip.type === 'text' && clip.textConfig?.yPercent !== undefined) {
-      centerY = (clip.textConfig.yPercent / 100) * height + (clip.transform.y / 100) * height;
+      centerY = (clip.textConfig.yPercent / 100) * height + (clip.transform.y / 100) * height + animOffsetY;
     }
     ctx.translate(centerX, centerY);
 
@@ -154,7 +202,7 @@ export function renderCanvasFrame(
       ctx.rotate((clip.transform.rotation * Math.PI) / 180);
     }
 
-    let scale = clip.transform.scale || 1;
+    let scale = (clip.transform.scale || 1) * animScale;
 
     // Transition effect simulation
     if (clip.transitionIn === 'zoom' && clipAge < 0.4) {
@@ -216,16 +264,56 @@ export function renderCanvasFrame(
       let textScale = 1;
       let alphaMultiplier = 1;
 
-      if (cfg.animation === 'pop') {
-        const popTime = Math.min(1, clipAge * 5);
-        textScale = popTime < 0.6 ? (popTime / 0.6) * 1.15 : 1.15 - ((popTime - 0.6) / 0.4) * 0.15;
-      } else if (cfg.animation === 'bounce') {
+      const animType = cfg.animation;
+      const animConfig = cfg.animationConfig;
+
+      if (animType === 'spring-pop' || animType === 'pop') {
+        const dur = animConfig?.duration || 0.55;
+        const tension = animConfig?.springTension || 1;
+        if (clipAge < dur) {
+          const p = Math.max(0, Math.min(1, clipAge / dur));
+          // Physics-based elastic spring overshoot
+          const spring = 1 - Math.exp(-6 * p * tension) * Math.cos(p * Math.PI * 4.5 * tension);
+          textScale *= Math.max(0.01, spring);
+        }
+      } else if (animType === 'keyframe-zoom-in') {
+        const zStart = animConfig?.zoomStart ?? 1.0;
+        const zEnd = animConfig?.zoomEnd ?? 1.25;
+        const p = Math.min(1, Math.max(0, clipProgress));
+        textScale *= zStart + (zEnd - zStart) * (p * (2 - p));
+      } else if (animType === 'keyframe-zoom-out') {
+        const zStart = animConfig?.zoomStart ?? 1.0;
+        const zEnd = animConfig?.zoomEnd ?? 1.25;
+        const p = Math.min(1, Math.max(0, clipProgress));
+        textScale *= zEnd - (zEnd - zStart) * (p * (2 - p));
+      } else if (animType === 'slide-up') {
+        const dur = animConfig?.duration || 0.45;
+        if (clipAge < dur) {
+          const p = clipAge / dur;
+          const easeP = 1 - Math.pow(1 - p, 3);
+          textOffsetY += (1 - easeP) * 45;
+          alphaMultiplier *= easeP;
+        }
+      } else if (animType === 'slide-left') {
+        const dur = animConfig?.duration || 0.45;
+        if (clipAge < dur) {
+          const p = clipAge / dur;
+          const easeP = 1 - Math.pow(1 - p, 3);
+          ctx.translate((1 - easeP) * 75, 0);
+          alphaMultiplier *= easeP;
+        }
+      } else if (animType === 'glitch') {
+        if (clipAge < 0.3) {
+          textOffsetY += (Math.random() - 0.5) * 8;
+          ctx.translate((Math.random() - 0.5) * 12, 0);
+        }
+      } else if (animType === 'bounce') {
         textOffsetY = Math.sin(clipProgress * Math.PI * 6) * 8;
         textScale = 1 + Math.sin(clipProgress * Math.PI * 6) * 0.04;
-      } else if (cfg.animation === 'karaoke') {
+      } else if (animType === 'karaoke') {
         const wave = Math.sin(clipProgress * Math.PI * 4);
         textScale = 1 + Math.max(0, wave) * 0.06;
-      } else if (cfg.animation === 'fade') {
+      } else if (animType === 'fade') {
         if (clipAge < 0.25) {
           alphaMultiplier = clipAge / 0.25;
         } else if (clipRemaining < 0.25) {
@@ -417,9 +505,14 @@ export function renderCanvasFrame(
         // --- 2. CLASSIC WHOLE-LINE RENDERING ---
         let textToRender = cfg.text;
         if (cfg.animation === 'typewriter') {
-          const charProgress = Math.min(1, clipAge * 3.5);
-          const chars = Math.max(1, Math.floor(charProgress * cfg.text.length));
-          textToRender = cfg.text.slice(0, chars);
+          const speed = cfg.animationConfig?.typewriterSpeed || 18;
+          const typingDur = cfg.animationConfig?.duration || Math.max(0.6, cfg.text.length / speed);
+          const tProgress = Math.min(1, Math.max(0, clipAge / typingDur));
+          const charsCount = Math.max(1, Math.floor(tProgress * cfg.text.length));
+          textToRender = cfg.text.slice(0, charsCount);
+          if (tProgress < 1 && Math.floor(clipAge * 4) % 2 === 0) {
+            textToRender += ' |';
+          }
         }
 
         ctx.textAlign = (cfg.align as CanvasTextAlign) || 'center';

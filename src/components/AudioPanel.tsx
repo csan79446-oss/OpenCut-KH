@@ -65,7 +65,6 @@ export const AudioPanel: React.FC<AudioPanelProps> = ({
   const [selectedVoice, setSelectedVoice] = useState<string>('km-female');
   const [selectedLang, setSelectedLang] = useState<'auto' | 'km' | 'en'>('auto');
   const [speedRate, setSpeedRate] = useState<number>(1.0);
-  const [autoGenerateCaptions, setAutoGenerateCaptions] = useState<boolean>(true);
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [generatedDuration, setGeneratedDuration] = useState<number>(0);
@@ -396,35 +395,22 @@ export const AudioPanel: React.FC<AudioPanelProps> = ({
         const voiceTitle = selectedPersona?.name || data.voiceName || 'AI Voice';
         const ttsItem: MediaItem = {
           id: `ai-voice-${Date.now()}`,
-          name: `${voiceTitle}: "${ttsText.slice(0, 20)}..."`,
+          name: `${voiceTitle}: "${ttsText.slice(0, 24)}..."`,
           type: 'audio',
           url: data.audioDataUrl,
           duration: accurateDur,
           category: 'voiceover',
+          ttsText: ttsText.trim(),
           waveform: generateWaveformPeaks(Math.max(24, Math.floor(accurateDur * 6))),
         };
 
-        // Add to timeline atomically with user's selected word-by-word caption style
-        const finalCaptionConfig = autoGenerateCaptions ? buildCaptionTextConfig(ttsText) : undefined;
-        if (onAddVoiceoverToTimeline) {
-          onAddVoiceoverToTimeline(ttsItem, autoGenerateCaptions ? ttsText.trim() : undefined, finalCaptionConfig);
-        } else {
-          onAddAudioToTimeline(ttsItem);
-          if (autoGenerateCaptions && onAddSubtitlesToTimeline) {
-            const subItem: SubtitleItem = {
-              id: `sub-tts-${Date.now()}`,
-              start: currentTime,
-              end: currentTime + accurateDur,
-              text: ttsText.trim(),
-            };
-            onAddSubtitlesToTimeline([subItem], finalCaptionConfig);
-          }
-        }
+        // Add ONLY the audio clip to Audio Track on timeline as requested
+        onAddAudioToTimeline(ttsItem);
 
         setSuccessInfo(
           language === 'km'
-            ? `បានបង្កើតសំឡេងធម្មជាតិ (${accurateDur}s) និងដាក់ចូល Timeline រួចរាល់!`
-            : `Synthesized natural voice (${accurateDur}s) and added to Timeline!`
+            ? `បានបង្កើតសំឡេង AI Voice (${accurateDur}s) និងដាក់លើ Audio Track រួចរាល់!`
+            : `Synthesized AI Voice (${accurateDur}s) and added to Audio Track!`
         );
       } else {
         throw new Error(data.error || 'TTS generation failed');
@@ -475,41 +461,44 @@ export const AudioPanel: React.FC<AudioPanelProps> = ({
   return (
     <div className="h-full flex flex-col p-3 text-xs bg-[#151620] overflow-y-auto space-y-3">
       {/* Category Tabs */}
-      <div className="flex space-x-1 p-1 bg-[#12131c] rounded-md border border-[#232535]">
+      <div className="flex space-x-1 p-1 bg-[#12131c] rounded-lg border border-[#232535]">
         <button
           onClick={() => setActiveCategory('voiceover')}
-          className={`flex-1 py-1 rounded text-[11px] font-medium transition flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
             activeCategory === 'voiceover'
-              ? 'bg-purple-600 text-white shadow'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-purple-600 text-white shadow-sm'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#1a1b28]'
           }`}
+          title={language === 'km' ? 'សំឡេង AI Voiceover / TTS' : 'AI Voiceover & Speech'}
         >
-          <Radio className="w-3 h-3 text-pink-300" />
-          <span>AI Voiceover</span>
+          <Radio className="w-3.5 h-3.5 text-pink-300 shrink-0" />
+          <span className="truncate">AI Voiceover</span>
         </button>
 
         <button
           onClick={() => setActiveCategory('music')}
-          className={`flex-1 py-1 rounded text-[11px] font-medium transition flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
             activeCategory === 'music'
-              ? 'bg-purple-600 text-white shadow'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-purple-600 text-white shadow-sm'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#1a1b28]'
           }`}
+          title={language === 'km' ? 'បទភ្លេងផ្ទៃខាងក្រោយ (BGM)' : 'Background Music'}
         >
-          <Music className="w-3 h-3" />
-          <span>{t.musicTracks}</span>
+          <Music className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
+          <span className="truncate">{language === 'km' ? 'បទភ្លេង' : 'Music'}</span>
         </button>
 
         <button
           onClick={() => setActiveCategory('sfx')}
-          className={`flex-1 py-1 rounded text-[11px] font-medium transition flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
             activeCategory === 'sfx'
-              ? 'bg-purple-600 text-white shadow'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-purple-600 text-white shadow-sm'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#1a1b28]'
           }`}
+          title={language === 'km' ? 'សំឡេង Sound Effects (SFX)' : 'Sound Effects'}
         >
-          <Volume2 className="w-3 h-3" />
-          <span>{t.soundEffects}</span>
+          <Volume2 className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+          <span className="truncate">Sound Effects</span>
         </button>
       </div>
 
@@ -633,200 +622,14 @@ export const AudioPanel: React.FC<AudioPanelProps> = ({
               />
             </div>
 
-            {/* Auto Synchronized Captions Checkbox */}
-            <div className="space-y-2">
-              <label className="flex items-center space-x-2 text-[11px] text-gray-300 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={autoGenerateCaptions}
-                  onChange={(e) => setAutoGenerateCaptions(e.target.checked)}
-                  className="rounded border-[#33354a] text-purple-600 focus:ring-0 w-3.5 h-3.5 bg-[#12131f]"
-                />
-                <span className="text-gray-200 font-semibold flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-                  {language === 'km'
-                    ? 'បង្កើត Subtitle ស្វ័យប្រវត្តិតាមសំឡេង (Sync Captions)'
-                    : 'Automatically create synchronized Subtitle on timeline'}
-                </span>
-              </label>
-
-              {/* Subtitle Style & Word Sync Animation Controls */}
-              {autoGenerateCaptions && (
-                <div className="p-2.5 bg-[#12131f] rounded-xl border border-purple-500/35 space-y-2.5">
-                  {/* Section Title */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-1.5 text-xs font-bold text-purple-300">
-                      <Zap className="w-3.5 h-3.5 text-yellow-400" />
-                      <span>
-                        {language === 'km'
-                          ? '⚡ ម៉ូដអក្សរតាមសំឡេង (Word Sync Style)'
-                          : '⚡ Spoken Word Sync Style'}
-                      </span>
-                    </div>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-200 font-mono border border-purple-600/40 font-bold">
-                      CAPCUT VIRAL
-                    </span>
-                  </div>
-
-                  {/* 1. Word Animation Mode Options */}
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      {
-                        id: 'word-by-word',
-                        nameKm: '⚡ ម្ដងមួយពាក្យ (Hormozi)',
-                        nameEn: '⚡ Word-by-Word (Reveal)',
-                        descKm: 'លេចចេញពាក្យម្ដងមួយៗតាមសំឡេង',
-                      },
-                      {
-                        id: 'word-bounce',
-                        nameKm: '🎈 លោតតាមពាក្យ (Bounce)',
-                        nameEn: '🎈 Word Bounce',
-                        descKm: 'ពាក្យកំពុងនិយាយលោតធំឡើង',
-                      },
-                      {
-                        id: 'word-highlight',
-                        nameKm: '🌟 រំលេចពាក្យ (Highlight)',
-                        nameEn: '🌟 Word Highlight',
-                        descKm: 'ពាក្យកំពុងនិយាយរីកធំ និងភ្លឺ',
-                      },
-                      {
-                        id: 'none',
-                        nameKm: '📄 ពេញប្រយោគ (Static)',
-                        nameEn: '📄 Static Full',
-                        descKm: 'បង្ហាញអក្សរពេញប្រយោគធម្មតា',
-                      },
-                    ].map((mode) => {
-                      const isSel = wordStyle === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          type="button"
-                          onClick={() => handleWordStyleChange(mode.id as WordAnimationStyle)}
-                          className={`p-1.5 rounded-lg text-left transition cursor-pointer border ${
-                            isSel
-                              ? 'bg-purple-600/30 border-purple-400 text-white shadow-sm ring-1 ring-purple-400/50'
-                              : 'bg-[#181a29] border-[#25283c] text-gray-400 hover:text-gray-200 hover:border-gray-600'
-                          }`}
-                        >
-                          <div className="font-bold text-[10.5px] truncate">
-                            {language === 'km' ? mode.nameKm : mode.nameEn}
-                          </div>
-                          <div className="text-[8.5px] text-gray-500 truncate mt-0.5">
-                            {mode.descKm}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* 2. Highlight Color Picker Swatches */}
-                  {wordStyle !== 'none' && (
-                    <div className="pt-1 flex items-center justify-between border-t border-[#202235]">
-                      <span className="text-[10px] text-gray-400 font-medium">
-                        {language === 'km' ? 'ពណ៌ពាក្យកំពុងនិយាយ:' : 'Active Spoken Word Color:'}
-                      </span>
-                      <div className="flex items-center space-x-1.5">
-                        {[
-                          { color: '#ffe600', name: 'Yellow' },
-                          { color: '#22c55e', name: 'Green Neon' },
-                          { color: '#06b6d4', name: 'Cyan' },
-                          { color: '#ec4899', name: 'Pink Neon' },
-                          { color: '#f97316', name: 'Orange' },
-                        ].map((swatch) => (
-                          <button
-                            key={swatch.color}
-                            type="button"
-                            onClick={() => handleHighlightColorChange(swatch.color)}
-                            className={`w-4.5 h-4.5 rounded-full transition cursor-pointer border-2 ${
-                              highlightColor === swatch.color
-                                ? 'border-white scale-125 shadow-md ring-1 ring-purple-400'
-                                : 'border-transparent opacity-65 hover:opacity-100 hover:scale-110'
-                            }`}
-                            style={{ backgroundColor: swatch.color }}
-                            title={swatch.name}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 3. Quick Visual Caption Presets */}
-                  <div className="space-y-1 pt-1 border-t border-[#202235]">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-gray-400 font-medium">
-                        {language === 'km' ? 'ម៉ូតអក្សរ CapCut Preset:' : 'Caption Preset Template:'}
-                      </span>
-                      <span className="text-purple-300 font-semibold truncate max-w-[150px]">
-                        {getCaptionStyleById(captionStyleId).name}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-1">
-                      {CAPCUT_CAPTION_STYLES.slice(0, 6).map((style) => (
-                        <button
-                          key={style.id}
-                          type="button"
-                          onClick={() => handleCaptionStyleChange(style.id)}
-                          className={`p-1.5 rounded-md border text-left transition cursor-pointer flex flex-col justify-between ${
-                            captionStyleId === style.id
-                              ? 'border-purple-400 bg-purple-950/40 ring-1 ring-purple-400/50'
-                              : 'border-[#24263b] bg-[#161726] hover:border-gray-500'
-                          }`}
-                        >
-                          <span className="text-[9px] text-gray-400 truncate font-medium">
-                            {language === 'km' ? style.nameKm : style.name}
-                          </span>
-                          <span
-                            className="font-bold text-[10px] mt-0.5 truncate"
-                            style={{
-                              color: style.config.color,
-                              textShadow: style.config.strokeWidth
-                                ? `0 0 2px ${style.config.strokeColor}`
-                                : 'none',
-                            }}
-                          >
-                            {style.previewText}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 4. Live Visual Preview Box */}
-                  <div className="p-2 rounded-lg bg-[#0b0c14] border border-[#23253a] flex items-center justify-center">
-                    {(() => {
-                      const activePreset = getCaptionStyleById(captionStyleId);
-                      return (
-                        <div
-                          className="font-bold text-xs px-2.5 py-1 rounded inline-flex items-center gap-1 shadow-sm"
-                          style={{
-                            color: activePreset.config.color,
-                            backgroundColor: activePreset.config.backgroundColor,
-                            fontFamily: activePreset.config.fontFamily,
-                            textShadow: activePreset.config.strokeWidth > 0
-                              ? `0 0 3px ${activePreset.config.strokeColor}`
-                              : 'none',
-                          }}
-                        >
-                          <span>{language === 'km' ? 'សួស្ដី' : 'Hello'}</span>
-                          <span
-                            className="px-1 rounded"
-                            style={{
-                              color: highlightColor,
-                              textShadow: `0 0 6px ${highlightColor}`,
-                              transform: wordStyle === 'word-bounce' ? 'scale(1.15) translateY(-2px)' : 'scale(1.1)',
-                              display: 'inline-block',
-                            }}
-                          >
-                            {language === 'km' ? 'បងប្អូនទាំងអស់គ្នា' : 'Everyone'}
-                          </span>
-                          <span>{language === 'km' ? 'ស្វាគមន៍!' : 'Welcome!'}</span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
+            {/* Direct Audio Track Placement Information */}
+            <div className="p-2.5 bg-[#12131f] rounded-lg border border-purple-500/25 flex items-start space-x-2 text-[10.5px] text-gray-300">
+              <FileText className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                {language === 'km'
+                  ? '💡 សំឡេង AI Voice នឹងដាក់លើ Audio Track ដោយស្វ័យប្រវត្តិ។ ដើម្បីបង្កើត Subtitle/Auto Caption ចេញពីសំឡេងនេះ សូមចូលទៅផ្ទាំង "Text" រួចចុច "Generate Auto Caption"។'
+                  : '💡 Generated AI Voice will be added directly to Audio Track. To generate captions from this voice, head to the "Text" panel and click "Generate Auto Caption".'}
+              </p>
             </div>
 
             {/* Success info if generated */}
@@ -902,29 +705,15 @@ export const AudioPanel: React.FC<AudioPanelProps> = ({
                       const selectedPersona = voicePersonas.find((v) => v.id === selectedVoice);
                       const ttsItem: MediaItem = {
                         id: `ai-voice-${Date.now()}`,
-                        name: `${selectedPersona?.name || 'Voice'}: "${ttsText.slice(0, 16)}..."`,
+                        name: `${selectedPersona?.name || 'Voice'}: "${ttsText.slice(0, 24)}..."`,
                         type: 'audio',
                         url: generatedAudioUrl,
                         duration: generatedDuration || 4,
                         category: 'voiceover',
-                        waveform: generateWaveformPeaks(Math.max(24, Math.floor(generatedDuration * 6))),
+                        ttsText: ttsText.trim(),
+                        waveform: generateWaveformPeaks(Math.max(24, Math.floor((generatedDuration || 4) * 6))),
                       };
-                      const finalCaptionConfig = autoGenerateCaptions ? buildCaptionTextConfig(ttsText) : undefined;
-                      if (onAddVoiceoverToTimeline) {
-                        onAddVoiceoverToTimeline(ttsItem, autoGenerateCaptions ? ttsText.trim() : undefined, finalCaptionConfig);
-                      } else {
-                        onAddAudioToTimeline(ttsItem);
-                        if (autoGenerateCaptions && onAddSubtitlesToTimeline) {
-                          onAddSubtitlesToTimeline([
-                            {
-                              id: `sub-tts-${Date.now()}`,
-                              start: currentTime,
-                              end: currentTime + (generatedDuration || 4),
-                              text: ttsText.trim(),
-                            },
-                          ], finalCaptionConfig);
-                        }
-                      }
+                      onAddAudioToTimeline(ttsItem);
                     }}
                     className="flex-1 py-1.5 rounded bg-[#202238] hover:bg-fuchsia-600/30 text-fuchsia-200 border border-fuchsia-500/40 text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer"
                   >

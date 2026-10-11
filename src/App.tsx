@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  AnimationConfig,
   AspectRatio,
   ClipFilters,
   ClipTransform,
@@ -29,6 +30,7 @@ import { MediaPanel } from './components/MediaPanel';
 import { AutoCutPanel } from './components/AutoCutPanel';
 import { AudioPanel } from './components/AudioPanel';
 import { TextPanel } from './components/TextPanel';
+import { AnimationPanel } from './components/AnimationPanel';
 import { EffectsPanel } from './components/EffectsPanel';
 import { TransitionsPanel } from './components/TransitionsPanel';
 import { StickersPanel } from './components/StickersPanel';
@@ -888,6 +890,7 @@ export default function App() {
             : item.type === 'audio'
             ? '#8b5cf6'
             : '#06b6d4',
+        ttsText: item.ttsText,
       };
 
       const updated = [...prevClips, newClip];
@@ -958,6 +961,7 @@ export default function App() {
         audioWaveform:
           item.waveform || generateWaveformPeaks(Math.max(24, Math.floor(dur * 6))),
         color: '#d946ef',
+        ttsText: item.ttsText || subtitleText,
       };
 
       const updated = [...prevClips, audioClip];
@@ -1397,6 +1401,42 @@ export default function App() {
     );
   };
 
+  const handleUpdateClipAnimation = (
+    clipId: string,
+    animUpdate: Partial<AnimationConfig>
+  ) => {
+    setClips((prev) =>
+      prev.map((c) => {
+        if (c.id === clipId) {
+          const currentAnim = c.animation || { preset: 'none', duration: 0.6 };
+          const mergedAnim: AnimationConfig = { ...currentAnim, ...animUpdate };
+          let updatedTextConfig = c.textConfig;
+          if (c.textConfig) {
+            updatedTextConfig = {
+              ...c.textConfig,
+              animation: mergedAnim.preset,
+              animationConfig: mergedAnim,
+            };
+          }
+          return {
+            ...c,
+            animation: mergedAnim,
+            textConfig: updatedTextConfig,
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  const handlePreviewAnimation = () => {
+    const target = selectedClip || clips[0];
+    if (target) {
+      setCurrentTime(target.start);
+      setIsPlaying(true);
+    }
+  };
+
   // Track management
   const handleToggleTrackVisibility = (trackId: string) => {
     setTracks((prev) =>
@@ -1539,7 +1579,7 @@ export default function App() {
         <SidebarTabs activeTab={activeTab} onTabChange={setActiveTab} language={language} />
 
         {/* Left Content Drawer */}
-        <div className="w-76 bg-[#151620] border-r border-[#20212f] flex flex-col shrink-0 overflow-hidden">
+        <div className="w-90 bg-[#151620] border-r border-[#20212f] flex flex-col shrink-0 overflow-hidden">
           {activeTab === 'media' && (
             <MediaPanel
               mediaLibrary={mediaLibrary}
@@ -1636,6 +1676,7 @@ export default function App() {
           clips={clips}
           tracks={tracks}
           selectedClipId={selectedClipId}
+          mediaLibrary={mediaLibrary}
           onTogglePlay={() => setIsPlaying((prev) => !prev)}
           onSeek={(time) => setCurrentTime(time)}
           onSplitAtPlayhead={() => {
@@ -1658,7 +1699,9 @@ export default function App() {
           onUpdateClipAudio={handleUpdateClipAudio}
           onUpdateClipSpeed={handleUpdateClipSpeed}
           onUpdateTextConfig={handleUpdateTextConfig}
+          onUpdateClipAnimation={handleUpdateClipAnimation}
           onApplyStyleToAllCaptions={handleApplyStyleToAllCaptions}
+          onPreviewAnimation={handlePreviewAnimation}
           language={language}
         />
       </div>

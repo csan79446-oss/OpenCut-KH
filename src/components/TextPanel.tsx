@@ -20,6 +20,10 @@ import {
   Layers,
   Wand2,
   Zap,
+  Mic,
+  Music,
+  Volume2,
+  Info,
 } from 'lucide-react';
 import { SubtitleItem, TextConfig, TimelineClip, WordAnimationStyle } from '../types/editor';
 import { Language, translations } from '../utils/i18n';
@@ -106,6 +110,7 @@ export const TextPanel: React.FC<TextPanelProps> = ({
   // Add custom title state
   const [customTitle, setCustomTitle] = useState('🔥 VIRAL HOOK TITLE');
   const [titlePosition, setTitlePosition] = useState<number>(25); // Top 25%
+  const [titleAnimation, setTitleAnimation] = useState<string>('spring-pop');
 
   // Current subtitle clips on timeline (from track-text or text type)
   const currentTextClips = clips
@@ -115,18 +120,50 @@ export const TextPanel: React.FC<TextPanelProps> = ({
   const selectedClip = clips.find((c) => c.id === selectedClipId);
   const currentSelectedPreset = CAPCUT_CAPTION_STYLES.find((s) => s.id === selectedStyleId) || CAPCUT_CAPTION_STYLES[0];
 
-  // Generate Auto-Captions with AI (with word-by-word animation config)
+  // Timeline Audio Sources detection (AI Voice, Imported Audio, Video Audio)
+  const audioClips = clips.filter((c) => c.type === 'audio');
+  const aiVoiceClips = audioClips.filter(
+    (c) => Boolean(c.ttsText) || c.title.toLowerCase().includes('ai voice') || c.title.toLowerCase().includes('voiceover') || c.trackId === 'track-a2'
+  );
+  const importedAudioClips = audioClips.filter((c) => !aiVoiceClips.includes(c));
+  const videoClips = clips.filter((c) => c.type === 'video');
+
+  const [selectedAudioSourceId, setSelectedAudioSourceId] = useState<string>('auto');
+  const [successCaptionNotice, setSuccessCaptionNotice] = useState<string | null>(null);
+
+  // Resolved active audio source for transcription
+  const targetAudioClip: TimelineClip | undefined =
+    selectedAudioSourceId === 'auto'
+      ? aiVoiceClips[0] || importedAudioClips[0] || videoClips[0]
+      : clips.find((c) => c.id === selectedAudioSourceId) || aiVoiceClips[0] || importedAudioClips[0] || videoClips[0];
+
+  // Generate Auto-Captions with AI (from AI Voice, Imported Audio, or Video)
   const handleGenerateAutoCaptions = async () => {
     setIsGenerating(true);
+    setSuccessCaptionNotice(null);
     try {
-      const activeVideoClip = clips.find((c) => c.type === 'video');
+      const activeClip = targetAudioClip;
+      const spokenText = activeClip?.ttsText;
+      const clipStartTime = activeClip ? activeClip.start : 0;
+      const clipDuration = activeClip ? activeClip.duration : 15;
+      const clipTitle = activeClip?.title || 'Timeline Audio';
+
       const res = await fetch('/api/ai/transcript', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           language: captionLanguage === 'bilingual' ? 'km' : captionLanguage,
-          videoTitle: activeVideoClip?.title || 'OpenCut Project',
-          audioTextHint: topicHint || (captionLanguage === 'km' ? 'វីដេអូនិយាយភាសាខ្មែរខ្លីៗទាក់ទាញ' : 'Short viral video transcript'),
+          videoTitle: clipTitle,
+          spokenText: spokenText || undefined,
+          audioStartTime: clipStartTime,
+          audioDuration: clipDuration,
+          audioTextHint:
+            topicHint ||
+            (spokenText
+              ? spokenText
+              : captionLanguage === 'km'
+              ? `សំឡេងនិយាយ ${clipTitle}`
+              : `Dialogue from ${clipTitle}`),
         }),
       });
 
@@ -139,6 +176,11 @@ export const TextPanel: React.FC<TextPanelProps> = ({
           highlightColor,
         };
         onAddSubtitlesToTimeline(data.subtitles, finalConfig);
+        setSuccessCaptionNotice(
+          language === 'km'
+            ? `បានបង្កើត Auto Caption (${data.subtitles.length} បន្ទាត់) ចេញពី ${activeClip ? activeClip.title : 'សំឡេង'} លើ Text Track ដោយជោគជ័យ!`
+            : `Generated ${data.subtitles.length} captions from ${activeClip ? activeClip.title : 'audio'} successfully!`
+        );
       }
     } catch (err) {
       console.error('Auto-caption generation error:', err);
@@ -234,9 +276,87 @@ export const TextPanel: React.FC<TextPanelProps> = ({
 
             <p className="text-[11px] text-gray-300 leading-relaxed">
               {language === 'km'
-                ? 'បង្កើតចំណងជើងរងអក្សររត់ស្វ័យប្រវត្តិតាមសំឡេងនិយាយក្នុងវីដេអូ ជាមួយនឹងម៉ូតអក្សរ CapCut ពេញនិយម។'
-                : 'Automatically generate synchronized dynamic subtitles from spoken audio with trending CapCut styles.'}
+                ? 'បង្កើតចំណងជើងរងអក្សររត់ស្វ័យប្រវត្តិតាមសំឡេងនិយាយក្នុងវីដេអូ ឬសំឡេង AI Voice / Import Audio ជាមួយនឹងម៉ូតអក្សរ CapCut ពេញនិយម។'
+                : 'Automatically generate synchronized dynamic subtitles from spoken audio, AI Voice, or imported audio with trending CapCut styles.'}
             </p>
+
+            {/* Audio Source Selector (AI Voice, Imported Audio, Video Audio) */}
+            <div className="space-y-1.5 p-2 bg-[#12131d] rounded-lg border border-cyan-500/25">
+              <div className="flex items-center justify-between text-[11px]">
+                <label className="text-gray-300 font-semibold flex items-center space-x-1.5">
+                  <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>
+                    {language === 'km' ? 'ប្រភពសំឡេង (Audio Source)' : 'Audio Source to Transcribe'}
+                  </span>
+                </label>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300 font-mono">
+                  {targetAudioClip
+                    ? targetAudioClip.ttsText
+                      ? 'AI Voice'
+                      : targetAudioClip.type === 'audio'
+                      ? 'Import Audio'
+                      : 'Video Track'
+                    : 'No Audio'}
+                </span>
+              </div>
+
+              {/* Source Dropdown */}
+              <div className="space-y-1">
+                <select
+                  value={selectedAudioSourceId}
+                  onChange={(e) => setSelectedAudioSourceId(e.target.value)}
+                  className="w-full bg-[#181a29] border border-[#2a2d42] rounded-md px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 cursor-pointer"
+                >
+                  <option value="auto">
+                    {language === 'km'
+                      ? '✨ ស្វែងរកដោយស្វ័យប្រវត្តិ (Auto: AI Voice / Import Audio)'
+                      : '✨ Auto-Detect (AI Voice / Imported Audio)'}
+                  </option>
+                  {aiVoiceClips.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      🎙️ {language === 'km' ? 'សំឡេង AI Voice' : 'AI Voice'}: {c.title} ({c.duration}s)
+                    </option>
+                  ))}
+                  {importedAudioClips.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      🎵 {language === 'km' ? 'សំឡេង Audio នាំចូល' : 'Imported Audio'}: {c.title} ({c.duration}s)
+                    </option>
+                  ))}
+                  {videoClips.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      🎬 {language === 'km' ? 'សំឡេងវីដេអូ' : 'Video'}: {c.title} ({c.duration}s)
+                    </option>
+                  ))}
+                </select>
+
+                {/* Status indicator badge */}
+                {targetAudioClip ? (
+                  <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/90 pt-0.5">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span className="truncate">
+                      {targetAudioClip.ttsText ? (
+                        language === 'km'
+                          ? `រកឃើញ AI Voice: "${targetAudioClip.ttsText.slice(0, 30)}..."`
+                          : `Found AI Voice: "${targetAudioClip.ttsText.slice(0, 30)}..."`
+                      ) : (
+                        language === 'km'
+                          ? `ភ្ជាប់ជាមួយសំឡេង: ${targetAudioClip.title} (${targetAudioClip.duration}s)`
+                          : `Linked with: ${targetAudioClip.title} (${targetAudioClip.duration}s)`
+                      )}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 pt-0.5">
+                    <Info className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span>
+                      {language === 'km'
+                        ? 'មិនទាន់មានសំឡេងលើ Timeline ទេ។ Generate AI Voice ឬ Import Audio ជាមុនសិន!'
+                        : 'No audio clip on Timeline. Generate AI Voice or import audio first!'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Language Selector */}
             <div className="space-y-1.5 pt-1">
@@ -444,6 +564,14 @@ export const TextPanel: React.FC<TextPanelProps> = ({
               />
             </div>
 
+            {/* Success Notice if generated */}
+            {successCaptionNotice && (
+              <div className="p-2 bg-emerald-950/40 border border-emerald-500/40 rounded text-emerald-300 text-[10.5px] flex items-center gap-1.5 animate-fadeIn">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>{successCaptionNotice}</span>
+              </div>
+            )}
+
             {/* Generate Action Button */}
             <button
               onClick={handleGenerateAutoCaptions}
@@ -451,7 +579,21 @@ export const TextPanel: React.FC<TextPanelProps> = ({
               className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.99] text-white rounded-lg font-bold flex items-center justify-center space-x-2 shadow-lg shadow-cyan-950/50 transition cursor-pointer"
             >
               <Sparkles className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-              <span>{isGenerating ? (language === 'km' ? 'កំពុងបង្កើតចំណងជើងរង...' : 'Generating Captions...') : t.generateAutoCaptions}</span>
+              <span>
+                {isGenerating
+                  ? language === 'km'
+                    ? 'កំពុងបង្កើតចំណងជើងរង...'
+                    : 'Generating Captions...'
+                  : targetAudioClip?.ttsText
+                  ? language === 'km'
+                    ? '✨ បង្កើត Caption ពីសំឡេង AI Voice'
+                    : '✨ Generate Captions from AI Voice'
+                  : targetAudioClip?.type === 'audio'
+                  ? language === 'km'
+                    ? '✨ បង្កើត Caption ពីសំឡេង Audio'
+                    : '✨ Generate Captions from Audio'
+                  : t.generateAutoCaptions}
+              </span>
             </button>
           </div>
 
@@ -756,6 +898,30 @@ export const TextPanel: React.FC<TextPanelProps> = ({
               </div>
             </div>
 
+            {/* Title Animation Preset */}
+            <div>
+              <label className="text-[11px] text-gray-400 block mb-1">
+                {language === 'km' ? 'ចលនាអក្សរ (Animation Preset)' : 'Animation Preset'}
+              </label>
+              <select
+                value={titleAnimation}
+                onChange={(e) => setTitleAnimation(e.target.value)}
+                className="w-full bg-[#12131d] border border-[#27293d] rounded-lg p-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 cursor-pointer"
+              >
+                <option value="typewriter">⌨️ Typewriter (វាយអក្សរ)</option>
+                <option value="spring-pop">⚡ Spring Pop (លោតស្ទុះ Elastic)</option>
+                <option value="keyframe-zoom-in">🔍 Keyframe Zoom In (ពង្រីក)</option>
+                <option value="keyframe-zoom-out">🔎 Keyframe Zoom Out (បង្រួម)</option>
+                <option value="pop">💥 Pop Entrance (Viral Hook)</option>
+                <option value="bounce">🔥 Kinetic Pulse (MrBeast)</option>
+                <option value="slide-up">⬆️ Slide Up (រំកិលឡើង)</option>
+                <option value="slide-left">➡️ Slide Left (រំកិលឆ្វេង)</option>
+                <option value="glitch">⚡ Glitch Flash (ភ្លឹបភ្លែត)</option>
+                <option value="fade">✨ Cinema Fade (រលាយចូល)</option>
+                <option value="none">Static None</option>
+              </select>
+            </div>
+
             {/* Add Action Button */}
             <button
               onClick={() => {
@@ -765,11 +931,20 @@ export const TextPanel: React.FC<TextPanelProps> = ({
                     ...chosenStyle.config,
                     text: customTitle,
                     yPercent: titlePosition,
+                    animation: titleAnimation as any,
+                    animationConfig: {
+                      preset: titleAnimation as any,
+                      duration: 0.6,
+                      zoomStart: 1.0,
+                      zoomEnd: 1.35,
+                      typewriterSpeed: 20,
+                      springTension: 1.2,
+                    },
                   },
                   customTitle
                 );
               }}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold flex items-center justify-center space-x-1.5 shadow-lg transition cursor-pointer"
+              className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-bold flex items-center justify-center space-x-1.5 shadow-lg transition cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{t.addTitle}</span>

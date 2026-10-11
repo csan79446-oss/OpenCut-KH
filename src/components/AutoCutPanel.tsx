@@ -78,7 +78,6 @@ export const AutoCutPanel: React.FC<AutoCutPanelProps> = ({
       const data = await res.json();
       if (data.success && data.subtitles) {
         setTranscripts(data.subtitles);
-        onAddSubtitlesToTimeline(data.subtitles);
       }
     } catch (err) {
       console.error('Transcription error:', err);

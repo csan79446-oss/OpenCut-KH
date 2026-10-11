@@ -129,6 +129,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 }) => {
   const t = translations[language];
   const [zoom, setZoom] = useState<number>(45); // pixels per second
+  const [trackHeight, setTrackHeight] = useState<number>(18); // ultra-slim tracks (18px default)
   const [isSnapping, setIsSnapping] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDraggingPlayhead = useRef<boolean>(false);
@@ -165,7 +166,7 @@ export const Timeline: React.FC<TimelineProps> = ({
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const scrollLeft = containerRef.current.scrollLeft;
-    const trackHeaderWidth = 224; // 224px (w-56) track headers column
+    const trackHeaderWidth = 256; // 256px (w-64) track headers column
     const clickX = e.clientX - rect.left + scrollLeft - trackHeaderWidth;
     const newTime = Math.max(0, Math.min(totalDuration + 5, clickX / zoom));
     onSeek(Math.round(newTime * 100) / 100);
@@ -196,7 +197,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         // Auto-scroll timeline container if dragging near horizontal edges
         if (containerRef.current) {
           const containerRect = containerRef.current.getBoundingClientRect();
-          const trackHeaderWidth = 224; // 224px (w-56)
+          const trackHeaderWidth = 256; // 256px (w-64)
           const rightDist = containerRect.right - e.clientX;
           const leftDist = e.clientX - (containerRect.left + trackHeaderWidth);
 
@@ -212,7 +213,6 @@ export const Timeline: React.FC<TimelineProps> = ({
         if (containerRef.current) {
           const containerRect = containerRef.current.getBoundingClientRect();
           const rulerHeight = 28;
-          const trackHeight = 44;
           const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop - rulerHeight;
           const hoveredIndex = Math.floor(relativeY / trackHeight);
           if (hoveredIndex >= 0 && hoveredIndex < tracks.length) {
@@ -406,19 +406,19 @@ export const Timeline: React.FC<TimelineProps> = ({
   const canSplit = Boolean(activeClip);
 
   return (
-    <div className="h-72 bg-[#10111a] border-t border-[#20212f] flex flex-col select-none relative">
-      {/* 1. Timeline Toolbar with CapCut 3 Split Actions */}
-      <div className="h-10 bg-[#141522] border-b border-[#20212f] px-3 flex items-center justify-between z-20">
+    <div className="h-44 bg-[#10111a] border-t border-[#20212f] flex flex-col select-none relative">
+      {/* 1. Timeline Toolbar with CapCut Sleek Actions */}
+      <div className="h-9 bg-[#12131d] border-b border-[#212334] px-3 flex items-center justify-between z-20 shrink-0">
         {/* Left tools: Play / Pause + CapCut Split Options + Delete + Auto-Connect */}
         <div className="flex items-center space-x-1.5 flex-wrap">
           {/* Quick Timeline Play / Pause Button */}
           {onTogglePlay && (
             <button
               onClick={onTogglePlay}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-bold border transition cursor-pointer shadow-sm mr-1 ${
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-bold transition cursor-pointer shadow-sm mr-1 ${
                 isPlaying
-                  ? 'bg-cyan-600 hover:bg-cyan-500 text-white border-cyan-400'
-                  : 'bg-[#192236] hover:bg-cyan-600/40 text-cyan-300 border-cyan-500/40'
+                  ? 'bg-cyan-500 hover:bg-cyan-400 text-black'
+                  : 'bg-[#1c1e2d] hover:bg-[#27293e] text-white border border-[#2b2d42]'
               }`}
               title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
             >
@@ -439,26 +439,28 @@ export const Timeline: React.FC<TimelineProps> = ({
             disabled={!canSplit}
             className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold border transition ${
               canSplit
-                ? 'bg-[#152438] hover:bg-cyan-600/40 text-cyan-200 border-cyan-500/50 hover:border-cyan-400 active:scale-95 cursor-pointer shadow-sm'
+                ? 'bg-[#181926] hover:bg-[#222436] text-gray-200 border-[#282a3d] hover:border-cyan-500/50 active:scale-95 cursor-pointer'
                 : 'bg-transparent text-gray-600 border-transparent cursor-not-allowed'
             }`}
             title={`${t.splitClip} [Ctrl+B / C]`}
           >
             <Scissors className={`w-3.5 h-3.5 ${canSplit ? 'text-cyan-400' : 'text-gray-600'}`} />
-            <span>{language === 'km' ? 'កាត់ពុះ' : 'Split'}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-cyan-300 bg-cyan-950/70 border border-cyan-800/60' : 'text-gray-600 bg-gray-900/40'}`}>Ctrl+B</span>
+            <span>{language === 'km' ? 'កាត់' : 'Split'}</span>
+            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-gray-400 bg-[#12131e]' : 'text-gray-700'}`}>
+              Ctrl+B
+            </span>
           </button>
 
           {/* CapCut Split All Tracks at playhead (Ctrl+Shift+B) */}
           {onSplitAllTracks && (
             <button
               onClick={() => onSplitAllTracks(currentTime)}
-              className="flex items-center space-x-1 px-2 py-1 rounded text-xs font-semibold border transition bg-[#162033] hover:bg-cyan-700/40 text-cyan-300 border-cyan-600/40 hover:border-cyan-400 active:scale-95 cursor-pointer shadow-sm"
+              className="flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-semibold border transition bg-[#181926] hover:bg-[#222436] text-gray-200 border-[#282a3d] hover:border-cyan-500/50 active:scale-95 cursor-pointer"
               title={`${t.splitAllTracks} [Ctrl+Shift+B]`}
             >
               <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{language === 'km' ? 'កាត់គ្រប់ Track' : 'Split All'}</span>
-              <span className="text-[10px] font-mono px-1 rounded ml-0.5 text-cyan-300 bg-cyan-950/70 border border-cyan-800/60 hidden sm:inline">
+              <span>{language === 'km' ? 'កាត់ទាំងអស់' : 'Split All'}</span>
+              <span className="text-[10px] font-mono px-1 rounded ml-0.5 text-gray-400 bg-[#12131e] hidden sm:inline">
                 Ctrl+Shift+B
               </span>
             </button>
@@ -470,19 +472,21 @@ export const Timeline: React.FC<TimelineProps> = ({
               if (activeClip) onSplitDeleteLeft(activeClip.id, currentTime);
             }}
             disabled={!canSplit}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold border transition ${
+            className={`flex items-center space-x-1 px-2 py-1 rounded text-xs font-semibold border transition ${
               canSplit
-                ? 'bg-[#291f16] hover:bg-amber-600/40 text-amber-200 border-amber-500/50 hover:border-amber-400 active:scale-95 cursor-pointer shadow-sm'
+                ? 'bg-[#181926] hover:bg-[#222436] text-gray-200 border-[#282a3d] hover:border-amber-500/50 active:scale-95 cursor-pointer'
                 : 'bg-transparent text-gray-600 border-transparent cursor-not-allowed'
             }`}
             title={`${t.splitDeleteLeft} [Q]`}
           >
             <div className="flex items-center -space-x-1">
               <ChevronLeft className={`w-3 h-3 ${canSplit ? 'text-amber-400' : 'text-gray-600'}`} />
-              <Scissors className={`w-3.5 h-3.5 ${canSplit ? 'text-amber-400' : 'text-gray-600'}`} />
+              <Scissors className={`w-3 h-3 ${canSplit ? 'text-amber-400' : 'text-gray-600'}`} />
             </div>
-            <span>{language === 'km' ? 'កាត់+លុបឆ្វេង' : 'Del Left'}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-amber-300 bg-amber-950/70 border border-amber-800/60' : 'text-gray-600 bg-gray-900/40'}`}>Q</span>
+            <span>{language === 'km' ? 'លុបឆ្វេង' : 'Del Left'}</span>
+            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-amber-300 bg-[#12131e]' : 'text-gray-700'}`}>
+              Q
+            </span>
           </button>
 
           {/* CapCut Split Action 3: Split & Delete Right (W) */}
@@ -491,24 +495,26 @@ export const Timeline: React.FC<TimelineProps> = ({
               if (activeClip) onSplitDeleteRight(activeClip.id, currentTime);
             }}
             disabled={!canSplit}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold border transition ${
+            className={`flex items-center space-x-1 px-2 py-1 rounded text-xs font-semibold border transition ${
               canSplit
-                ? 'bg-[#291f16] hover:bg-amber-600/40 text-amber-200 border-amber-500/50 hover:border-amber-400 active:scale-95 cursor-pointer shadow-sm'
+                ? 'bg-[#181926] hover:bg-[#222436] text-gray-200 border-[#282a3d] hover:border-amber-500/50 active:scale-95 cursor-pointer'
                 : 'bg-transparent text-gray-600 border-transparent cursor-not-allowed'
             }`}
             title={`${t.splitDeleteRight} [W]`}
           >
             <div className="flex items-center -space-x-1">
-              <Scissors className={`w-3.5 h-3.5 ${canSplit ? 'text-amber-400' : 'text-gray-600'}`} />
+              <Scissors className={`w-3 h-3 ${canSplit ? 'text-amber-400' : 'text-gray-600'}`} />
               <ChevronRight className={`w-3 h-3 ${canSplit ? 'text-amber-400' : 'text-gray-600'}`} />
             </div>
-            <span>{language === 'km' ? 'កាត់+លុបស្ដាំ' : 'Del Right'}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-amber-300 bg-amber-950/70 border border-amber-800/60' : 'text-gray-600 bg-gray-900/40'}`}>W</span>
+            <span>{language === 'km' ? 'លុបស្ដាំ' : 'Del Right'}</span>
+            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${canSplit ? 'text-amber-300 bg-[#12131e]' : 'text-gray-700'}`}>
+              W
+            </span>
           </button>
 
-          <div className="h-4 w-px bg-[#26283d] mx-1" />
+          <div className="h-4 w-px bg-[#26283c] mx-0.5" />
 
-          {/* Delete Clip (with Auto-Connect / Snap indicator) */}
+          {/* Delete Clip */}
           <button
             onClick={() => {
               if (activeClip) onDeleteClip(activeClip.id);
@@ -516,14 +522,16 @@ export const Timeline: React.FC<TimelineProps> = ({
             disabled={!activeClip}
             className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs transition border font-semibold ${
               activeClip
-                ? 'bg-[#2b1720] hover:bg-rose-500/30 text-rose-300 border-rose-500/40 hover:border-rose-400 cursor-pointer shadow-sm'
+                ? 'bg-[#181926] hover:bg-rose-950/40 text-gray-200 hover:text-rose-300 border-[#282a3d] hover:border-rose-500/40 cursor-pointer'
                 : 'text-gray-700 border-transparent cursor-not-allowed'
             }`}
             title={isAutoConnect ? t.deleteAndConnect : t.deleteClip}
           >
             <Trash2 className={`w-3.5 h-3.5 ${activeClip ? 'text-rose-400' : 'text-gray-700'}`} />
             <span>{isAutoConnect ? (language === 'km' ? 'លុប & ភ្ជាប់' : 'Del & Snap') : (language === 'km' ? 'លុប' : 'Delete')}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${activeClip ? 'text-rose-300 bg-rose-950/60' : 'text-gray-700'}`}>Del</span>
+            <span className={`text-[10px] font-mono px-1 rounded ml-0.5 ${activeClip ? 'text-rose-300 bg-[#12131e]' : 'text-gray-700'}`}>
+              Del
+            </span>
           </button>
 
           {/* Duplicate Clip */}
@@ -534,7 +542,7 @@ export const Timeline: React.FC<TimelineProps> = ({
             disabled={!activeClip}
             className={`p-1.5 rounded transition ${
               activeClip
-                ? 'hover:bg-[#232537] text-gray-300 hover:text-white cursor-pointer'
+                ? 'hover:bg-[#222436] text-gray-300 hover:text-white cursor-pointer'
                 : 'text-gray-700 cursor-not-allowed'
             }`}
             title={t.duplicateClip}
@@ -542,22 +550,22 @@ export const Timeline: React.FC<TimelineProps> = ({
             <Copy className="w-3.5 h-3.5" />
           </button>
 
-          <div className="h-4 w-px bg-[#26283d] mx-1" />
+          <div className="h-4 w-px bg-[#26283c] mx-0.5" />
 
           {/* Auto-Connect / Magnetic Ripple Toggle */}
           {onToggleAutoConnect && (
             <button
               onClick={onToggleAutoConnect}
-              className={`px-2 py-1 rounded flex items-center space-x-1.5 text-xs font-semibold transition border cursor-pointer ${
+              className={`px-2.5 py-1 rounded flex items-center space-x-1.5 text-xs font-semibold transition border cursor-pointer ${
                 isAutoConnect
-                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50 shadow-sm shadow-cyan-950 hover:bg-cyan-500/30'
-                  : 'bg-transparent text-gray-500 border-gray-700 hover:text-gray-300'
+                  ? 'bg-cyan-950/30 text-cyan-300 border-cyan-500/40'
+                  : 'bg-[#181926] text-gray-400 border-[#282a3d] hover:text-gray-200'
               }`}
               title={t.autoConnect}
             >
               <Link className={`w-3.5 h-3.5 ${isAutoConnect ? 'text-cyan-400' : 'text-gray-500'}`} />
               <span>{language === 'km' ? 'ភ្ជាប់ស្វ័យប្រវត្តិ' : 'Auto-Connect'}</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${isAutoConnect ? 'bg-cyan-400 animate-pulse' : 'bg-gray-600'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${isAutoConnect ? 'bg-cyan-400' : 'bg-gray-600'}`} />
             </button>
           )}
 
@@ -565,7 +573,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           {onCloseGaps && (
             <button
               onClick={() => onCloseGaps()}
-              className="px-2 py-1 rounded flex items-center space-x-1 text-xs font-medium text-gray-300 hover:text-white bg-[#1a1c2b] hover:bg-[#25283c] border border-[#2b2d42] transition cursor-pointer"
+              className="px-2.5 py-1 rounded flex items-center space-x-1 text-xs font-medium text-gray-300 hover:text-white bg-[#181926] hover:bg-[#222436] border border-[#282a3d] transition cursor-pointer"
               title={t.closeAllGaps}
             >
               <Magnet className="w-3.5 h-3.5 text-cyan-400" />
@@ -574,8 +582,43 @@ export const Timeline: React.FC<TimelineProps> = ({
           )}
         </div>
 
-        {/* Right tools: Zoom */}
+        {/* Right tools: Track Height Selector + Fit & Zoom */}
         <div className="flex items-center space-x-2 text-xs text-gray-400">
+          {/* CapCut Track Height Switcher */}
+          <div className="flex items-center space-x-1 pr-2 border-r border-[#26283d]">
+            <span className="text-[10px] text-gray-400 font-medium hidden sm:inline">
+              {language === 'km' ? 'កំពស់ Tracks:' : 'Tracks:'}
+            </span>
+            <div className="flex items-center bg-[#161825] border border-[#27293d] rounded p-0.5 space-x-0.5">
+              {[
+                { label: language === 'km' ? 'តូចបំផុត (14px)' : 'Nano (14px)', val: 14 },
+                { label: language === 'km' ? 'ស្លីម (18px)' : 'Slim (18px)', val: 18 },
+                { label: language === 'km' ? 'តូច (22px)' : 'Compact (22px)', val: 22 },
+                { label: language === 'km' ? 'មធ្យម (28px)' : 'Medium (28px)', val: 28 },
+              ].map((preset) => (
+                <button
+                  key={preset.val}
+                  onClick={() => setTrackHeight(preset.val)}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition cursor-pointer ${
+                    trackHeight === preset.val
+                      ? 'bg-cyan-500 text-black shadow-sm'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-[#222436]'
+                  }`}
+                  title={`${preset.label}`}
+                >
+                  {preset.val}px
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setZoom(45)}
+            className="px-2 py-0.5 rounded bg-[#181926] hover:bg-[#222436] border border-[#282a3d] text-[10px] text-gray-300 font-medium transition cursor-pointer"
+            title="Reset Zoom (Fit)"
+          >
+            Fit (100%)
+          </button>
           <ZoomOut className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={() => setZoom(Math.max(20, zoom - 10))} />
           <input
             type="range"
@@ -583,26 +626,26 @@ export const Timeline: React.FC<TimelineProps> = ({
             max="120"
             value={zoom}
             onChange={(e) => setZoom(parseInt(e.target.value, 10))}
-            className="w-24 accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded"
+            className="w-20 accent-cyan-400 cursor-pointer h-1.5 bg-[#25283c] rounded"
           />
           <ZoomIn className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={() => setZoom(Math.min(120, zoom + 10))} />
-          <span className="font-mono text-[10px] w-8 text-right text-gray-500">{zoom}px</span>
+          <span className="font-mono text-[10px] w-7 text-right text-gray-400">{zoom}px</span>
         </div>
       </div>
 
       {/* 2. Tracks & Timeline Body */}
       <div
         ref={containerRef}
-        className="flex-1 flex overflow-x-auto overflow-y-auto relative custom-scrollbar bg-[#0d0e16]"
+        className="flex-1 flex overflow-x-auto overflow-y-auto relative custom-scrollbar bg-[#0b0c14]"
       >
-        {/* Track Headers Column (Fixed on left) */}
+        {/* Track Headers Column (Fixed on left, widened to 256px) */}
         <div
-          className="w-56 sticky left-0 z-20 bg-[#12131d] border-r border-[#20212f] shrink-0 flex flex-col select-none"
+          className="w-64 sticky left-0 z-20 bg-[#12131d] border-r border-[#20212f] shrink-0 flex flex-col select-none"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header spacer aligned with Ruler with + Add Track button */}
-          <div className="h-7 border-b border-[#20212f] px-2 flex items-center justify-between text-[11px] font-semibold text-gray-400 bg-[#141522] relative">
-            <span className="font-bold text-gray-300">{t.tracks} ({tracks.length})</span>
+          <div className="h-7 border-b border-[#20212f] px-2.5 flex items-center justify-between text-[11px] font-semibold text-gray-400 bg-[#141522] relative">
+            <span className="font-bold text-gray-200">{t.tracks} ({tracks.length})</span>
 
             <div className="relative">
               <button
@@ -670,192 +713,196 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Track Labels & Controls */}
-          {tracks.map((track, trackIndex) => (
-            <div
-              key={track.id}
-              className={`h-11 border-b border-[#1c1e2b] px-2 flex items-center justify-between text-xs text-gray-300 hover:bg-[#181926] transition ${
-                track.isLocked ? 'bg-[#151620] opacity-80' : ''
-              }`}
-            >
-              {/* Left: Track Dot & Editable Name */}
-              <div className="flex items-center space-x-1 min-w-0 flex-1 mr-1">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    track.type === 'video'
-                      ? 'bg-blue-400'
-                      : track.type === 'text'
-                      ? 'bg-yellow-400'
-                      : track.type === 'overlay'
-                      ? 'bg-cyan-400'
-                      : track.type === 'sfx'
-                      ? 'bg-pink-400'
-                      : 'bg-purple-400'
-                  }`}
-                />
+          {tracks.map((track, trackIndex) => {
+            const actionIconSize = trackHeight <= 18 ? 'w-2 h-2' : 'w-2.5 h-2.5';
+            return (
+              <div
+                key={track.id}
+                style={{ height: `${trackHeight}px` }}
+                className={`border-b border-[#1c1e2b] px-1.5 flex items-center justify-between text-xs text-gray-300 hover:bg-[#181926] transition ${
+                  track.isLocked ? 'bg-[#151620] opacity-80' : ''
+                }`}
+              >
+                {/* Left: Track Dot & Editable Name */}
+                <div className="flex items-center space-x-1 min-w-0 flex-1 mr-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      track.type === 'video'
+                        ? 'bg-blue-400'
+                        : track.type === 'text'
+                        ? 'bg-yellow-400'
+                        : track.type === 'overlay'
+                        ? 'bg-cyan-400'
+                        : track.type === 'sfx'
+                        ? 'bg-pink-400'
+                        : 'bg-purple-400'
+                    }`}
+                  />
 
-                {editingTrackId === track.id ? (
-                  <div className="flex items-center space-x-1 min-w-0 flex-1" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      autoFocus
-                      type="text"
-                      value={tempTrackName}
-                      onChange={(e) => setTempTrackName(e.target.value)}
-                      onBlur={() => handleSaveRename(track.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveRename(track.id);
-                        if (e.key === 'Escape') setEditingTrackId(null);
-                      }}
-                      className="bg-[#24273d] text-white px-1.5 py-0.5 rounded text-[10px] font-medium w-full outline-none border border-cyan-400"
-                    />
-                    <button
-                      onClick={() => handleSaveRename(track.id)}
-                      className="p-0.5 hover:text-cyan-400 text-emerald-400"
-                      title="Save"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setEditingTrackId(null)}
-                      className="p-0.5 text-gray-400 hover:text-gray-200"
-                      title="Cancel"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-1 truncate flex-1 min-w-0 group">
-                    <span
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        handleStartRename(track);
-                      }}
-                      className="font-medium text-[11px] truncate cursor-pointer hover:text-cyan-300"
-                      title={t.renameTrack}
-                    >
-                      {track.name}
-                    </span>
+                  {editingTrackId === track.id ? (
+                    <div className="flex items-center space-x-1 min-w-0 flex-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={tempTrackName}
+                        onChange={(e) => setTempTrackName(e.target.value)}
+                        onBlur={() => handleSaveRename(track.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveRename(track.id);
+                          if (e.key === 'Escape') setEditingTrackId(null);
+                        }}
+                        className="bg-[#24273d] text-white px-1 py-0 rounded text-[9px] font-medium w-full outline-none border border-cyan-400 h-3.5"
+                      />
+                      <button
+                        onClick={() => handleSaveRename(track.id)}
+                        className="p-0.5 hover:text-cyan-400 text-emerald-400"
+                        title="Save"
+                      >
+                        <Check className={actionIconSize} />
+                      </button>
+                      <button
+                        onClick={() => setEditingTrackId(null)}
+                        className="p-0.5 text-gray-400 hover:text-gray-200"
+                        title="Cancel"
+                      >
+                        <X className={actionIconSize} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-1 truncate flex-1 min-w-0 group">
+                      <span
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleStartRename(track);
+                        }}
+                        className="font-medium text-[9.5px] truncate cursor-pointer hover:text-cyan-300 leading-none"
+                        title={t.renameTrack}
+                      >
+                        {track.name}
+                      </span>
 
-                    {/* Pencil Edit button */}
+                      {/* Pencil Edit button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartRename(track);
+                        }}
+                        className="p-0.5 text-gray-500 hover:text-cyan-400 opacity-60 hover:opacity-100 transition"
+                        title={t.renameTrack}
+                      >
+                        <Edit2 className={actionIconSize} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Track Actions (Move Up/Down, Lock, Visibility, Mute, Delete) */}
+                <div className="flex items-center space-x-0.5 shrink-0">
+                  {/* Move track up / down */}
+                  {onMoveTrackUp && trackIndex > 0 && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleStartRename(track);
+                        onMoveTrackUp(track.id);
                       }}
-                      className="p-0.5 text-gray-500 hover:text-cyan-400 opacity-60 hover:opacity-100 transition"
-                      title={t.renameTrack}
+                      className="p-0.5 rounded text-gray-500 hover:text-cyan-300 hover:bg-[#25283c] transition"
+                      title="Move Track Up"
                     >
-                      <Edit2 className="w-2.5 h-2.5" />
+                      <ArrowUp className={actionIconSize} />
                     </button>
-                  </div>
-                )}
+                  )}
+
+                  {onMoveTrackDown && trackIndex < tracks.length - 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMoveTrackDown(track.id);
+                      }}
+                      className="p-0.5 rounded text-gray-500 hover:text-cyan-300 hover:bg-[#25283c] transition"
+                      title="Move Track Down"
+                    >
+                      <ArrowDown className={actionIconSize} />
+                    </button>
+                  )}
+
+                  {/* Lock Track Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleTrackLock(track.id);
+                    }}
+                    className={`p-0.5 rounded hover:bg-[#25283c] transition ${
+                      track.isLocked ? 'text-amber-400' : 'text-gray-500 hover:text-gray-200'
+                    }`}
+                    title={track.isLocked ? t.unlockTrack : t.lockTrack}
+                  >
+                    {track.isLocked ? <Lock className={actionIconSize} /> : <Unlock className={actionIconSize} />}
+                  </button>
+
+                  {/* Hide / Show Track */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleTrackVisibility(track.id);
+                    }}
+                    className={`p-0.5 rounded hover:bg-[#25283c] transition ${
+                      track.isVisible ? 'text-gray-400 hover:text-white' : 'text-gray-600'
+                    }`}
+                    title="Toggle Visibility"
+                  >
+                    {track.isVisible ? <Eye className={actionIconSize} /> : <EyeOff className={`${actionIconSize} text-rose-400`} />}
+                  </button>
+
+                  {/* Mute Track */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleTrackMute(track.id);
+                    }}
+                    className={`p-0.5 rounded hover:bg-[#25283c] transition ${
+                      !track.isMuted ? 'text-gray-400 hover:text-white' : 'text-gray-600'
+                    }`}
+                    title="Mute Track"
+                  >
+                    {track.isMuted ? <VolumeX className={`${actionIconSize} text-rose-400`} /> : <Volume2 className={actionIconSize} />}
+                  </button>
+
+                  {/* Connect / Close Gaps in Track */}
+                  {onCloseGaps && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCloseGaps(track.id);
+                      }}
+                      className="p-0.5 rounded hover:bg-[#25283c] text-cyan-400 hover:text-cyan-300 transition"
+                      title={language === 'km' ? 'ភ្ជាប់ Clips ក្នុង Track នេះ' : 'Connect clips in this track'}
+                    >
+                      <Link className={actionIconSize} />
+                    </button>
+                  )}
+
+                  {/* Delete Track Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (tracks.length > 1) {
+                        onDeleteTrack(track.id);
+                      }
+                    }}
+                    disabled={tracks.length <= 1}
+                    className={`p-0.5 rounded transition ${
+                      tracks.length > 1
+                        ? 'hover:bg-rose-500/20 text-gray-500 hover:text-rose-400 cursor-pointer'
+                        : 'text-gray-700 cursor-not-allowed opacity-40'
+                    }`}
+                    title={t.deleteTrack}
+                  >
+                    <Trash2 className={actionIconSize} />
+                  </button>
+                </div>
               </div>
-
-              {/* Right: Track Actions (Move Up/Down, Lock, Visibility, Mute, Delete) */}
-              <div className="flex items-center space-x-0.5 shrink-0">
-                {/* Move track up / down */}
-                {onMoveTrackUp && trackIndex > 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMoveTrackUp(track.id);
-                    }}
-                    className="p-1 rounded text-gray-500 hover:text-cyan-300 hover:bg-[#25283c] transition"
-                    title="Move Track Up"
-                  >
-                    <ArrowUp className="w-2.5 h-2.5" />
-                  </button>
-                )}
-
-                {onMoveTrackDown && trackIndex < tracks.length - 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMoveTrackDown(track.id);
-                    }}
-                    className="p-1 rounded text-gray-500 hover:text-cyan-300 hover:bg-[#25283c] transition"
-                    title="Move Track Down"
-                  >
-                    <ArrowDown className="w-2.5 h-2.5" />
-                  </button>
-                )}
-
-                {/* Lock Track Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleTrackLock(track.id);
-                  }}
-                  className={`p-1 rounded hover:bg-[#25283c] transition ${
-                    track.isLocked ? 'text-amber-400' : 'text-gray-500 hover:text-gray-200'
-                  }`}
-                  title={track.isLocked ? t.unlockTrack : t.lockTrack}
-                >
-                  {track.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                </button>
-
-                {/* Hide / Show Track */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleTrackVisibility(track.id);
-                  }}
-                  className={`p-1 rounded hover:bg-[#25283c] transition ${
-                    track.isVisible ? 'text-gray-400 hover:text-white' : 'text-gray-600'
-                  }`}
-                  title="Toggle Visibility"
-                >
-                  {track.isVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3 text-rose-400" />}
-                </button>
-
-                {/* Mute Track */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleTrackMute(track.id);
-                  }}
-                  className={`p-1 rounded hover:bg-[#25283c] transition ${
-                    !track.isMuted ? 'text-gray-400 hover:text-white' : 'text-gray-600'
-                  }`}
-                  title="Mute Track"
-                >
-                  {track.isMuted ? <VolumeX className="w-3 h-3 text-rose-400" /> : <Volume2 className="w-3 h-3" />}
-                </button>
-
-                {/* Connect / Close Gaps in Track */}
-                {onCloseGaps && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCloseGaps(track.id);
-                    }}
-                    className="p-1 rounded hover:bg-[#25283c] text-cyan-400 hover:text-cyan-300 transition"
-                    title={language === 'km' ? 'ភ្ជាប់ Clips ក្នុង Track នេះ' : 'Connect clips in this track'}
-                  >
-                    <Link className="w-3 h-3" />
-                  </button>
-                )}
-
-                {/* Delete Track Button (No alert / confirm!) */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (tracks.length > 1) {
-                      onDeleteTrack(track.id);
-                    }
-                  }}
-                  disabled={tracks.length <= 1}
-                  className={`p-1 rounded transition ${
-                    tracks.length > 1
-                      ? 'hover:bg-rose-500/20 text-gray-500 hover:text-rose-400 cursor-pointer'
-                      : 'text-gray-700 cursor-not-allowed opacity-40'
-                  }`}
-                  title={t.deleteTrack}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Scrollable Timeline Area */}
@@ -904,13 +951,14 @@ export const Timeline: React.FC<TimelineProps> = ({
               return (
                 <div
                   key={track.id}
+                  style={{ height: `${trackHeight}px` }}
                   onClick={(e) => {
                     if (e.target === e.currentTarget) {
                       updateTimeFromEvent(e);
                       onSelectClip(null);
                     }
                   }}
-                  className={`h-11 border-b border-[#181a28] relative hover:bg-[#12131e]/50 transition ${
+                  className={`border-b border-[#181a28] relative hover:bg-[#12131e]/50 transition ${
                     track.isLocked ? 'bg-amber-950/10' : ''
                   } ${
                     dragState &&
@@ -942,7 +990,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                         e.stopPropagation();
                         onCloseGaps(track.id);
                       }}
-                      className="absolute top-1.5 bottom-1.5 border border-dashed border-cyan-500/40 rounded flex items-center justify-center bg-cyan-950/20 hover:bg-cyan-500/20 cursor-pointer text-[10px] text-cyan-300 transition group/gap z-5"
+                      className="absolute top-[1px] bottom-[1px] border border-dashed border-cyan-500/40 rounded flex items-center justify-center bg-cyan-950/20 hover:bg-cyan-500/20 cursor-pointer text-[10px] text-cyan-300 transition group/gap z-5"
                       style={{
                         left: '2px',
                         width: `${Math.max(20, trackClips[0].start * zoom - 4)}px`,
@@ -982,11 +1030,11 @@ export const Timeline: React.FC<TimelineProps> = ({
                           }}
                           onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
                           title={language === 'km' ? 'អូសទៅឆ្វេង ឬស្ដាំ ដើម្បីប្ដូរទីតាំងលើ Track' : 'Drag left or right on track'}
-                          className={`absolute top-1 bottom-1 rounded-md flex items-center px-2 shadow-sm transition-shadow group select-none ${
+                          className={`absolute top-[1px] bottom-[1px] rounded-[3px] flex items-center px-1 shadow-sm transition-shadow group select-none ${
                             isBeingDragged
                               ? 'overflow-visible ring-2 ring-cyan-300 shadow-2xl shadow-cyan-950 z-50 scale-[1.02] opacity-95 cursor-grabbing brightness-110'
                               : isSelected
-                              ? 'overflow-hidden ring-2 ring-cyan-400 shadow-md shadow-cyan-900/50 z-10 brightness-110 cursor-grab'
+                              ? 'overflow-hidden ring-1.5 ring-cyan-400 shadow-md shadow-cyan-900/50 z-10 brightness-110 cursor-grab'
                               : 'overflow-hidden hover:brightness-105 cursor-grab'
                           } ${track.isLocked ? 'cursor-not-allowed opacity-90' : ''}`}
                           style={{
@@ -997,14 +1045,14 @@ export const Timeline: React.FC<TimelineProps> = ({
                         >
                           {/* Floating drag position indicator */}
                           {isBeingDragged && (
-                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#0a0c14]/95 text-cyan-300 font-mono text-[11px] font-bold px-2.5 py-1 rounded-md border border-cyan-400/80 shadow-2xl whitespace-nowrap z-50 pointer-events-none flex items-center space-x-1.5 backdrop-blur-md">
-                              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-sm shadow-cyan-400" />
+                            <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-[#0a0c14]/95 text-cyan-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded border border-cyan-400/80 shadow-2xl whitespace-nowrap z-50 pointer-events-none flex items-center space-x-1 backdrop-blur-md">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-sm shadow-cyan-400" />
                               <span>{dragState.currentStart.toFixed(2)}s</span>
-                              <span className="text-[10px] text-gray-400 font-normal">
+                              <span className="text-[9px] text-gray-400 font-normal">
                                 ({dragState.currentDeltaX >= 0 ? '+' : ''}{(dragState.currentDeltaX / zoom).toFixed(2)}s)
                               </span>
                               {dragState.dropInsertX !== undefined && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-sans">
+                                <span className="text-[8.5px] px-1 py-0 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-sans">
                                   {language === 'km' ? 'ប្ដូរលំដាប់' : 'Reorder'}
                                 </span>
                               )}
@@ -1018,26 +1066,26 @@ export const Timeline: React.FC<TimelineProps> = ({
                                 e.stopPropagation();
                                 startClipDrag(e, clip, 'trim-left');
                               }}
-                              className="absolute left-0 top-0 bottom-0 w-2.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
+                              className="absolute left-0 top-0 bottom-0 w-1.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
                               title="Trim Start"
                             />
                           )}
 
                           {/* Title & info */}
-                          <div className="flex items-center space-x-1.5 min-w-0 z-0 pointer-events-none select-none">
-                            {track.isLocked && <Lock className="w-2.5 h-2.5 text-amber-300 shrink-0" />}
-                            <span className="text-[11px] font-semibold text-white drop-shadow truncate">
+                          <div className="flex items-center space-x-1 min-w-0 z-0 pointer-events-none select-none">
+                            {track.isLocked && <Lock className="w-2 h-2 text-amber-300 shrink-0" />}
+                            <span className="text-[8.5px] font-semibold text-white drop-shadow truncate leading-none">
                               {clip.title}
                             </span>
                           </div>
 
                           {/* Audio Waveform visualization */}
                           {clip.audioWaveform && (
-                            <div className="absolute inset-0 flex items-center justify-around opacity-30 pointer-events-none px-2">
+                            <div className="absolute inset-0 flex items-center justify-around opacity-30 pointer-events-none px-1">
                               {clip.audioWaveform.map((val, i) => (
                                 <div
                                   key={i}
-                                  className="w-1 bg-white rounded-full"
+                                  className="w-[1px] bg-white rounded-full"
                                   style={{ height: `${Math.max(15, val * 0.85)}%` }}
                                 />
                               ))}
@@ -1051,7 +1099,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                                 e.stopPropagation();
                                 startClipDrag(e, clip, 'trim-right');
                               }}
-                              className="absolute right-0 top-0 bottom-0 w-2.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
+                              className="absolute right-0 top-0 bottom-0 w-1.5 bg-black/40 hover:bg-white/50 cursor-ew-resize opacity-0 group-hover:opacity-100 transition z-10"
                               title="Trim End"
                             />
                           )}
@@ -1064,7 +1112,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                               e.stopPropagation();
                               onCloseGaps(track.id);
                             }}
-                            className="absolute top-1.5 bottom-1.5 border border-dashed border-cyan-500/40 rounded flex items-center justify-center bg-cyan-950/20 hover:bg-cyan-500/20 cursor-pointer text-[10px] text-cyan-300 transition group/gap z-5"
+                            className="absolute top-[1px] bottom-[1px] border border-dashed border-cyan-500/40 rounded flex items-center justify-center bg-cyan-950/20 hover:bg-cyan-500/20 cursor-pointer text-[10px] text-cyan-300 transition group/gap z-5"
                             style={{
                               left: `${clipEnd * zoom + 2}px`,
                               width: `${Math.max(20, gap * zoom - 4)}px`,

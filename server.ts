@@ -33,23 +33,99 @@ const getGeminiClient = () => {
 // 1. AI Transcribe & Subtitle Generator
 app.post('/api/ai/transcript', async (req: Request, res: Response) => {
   try {
-    const { audioTextHint, language = 'en', videoTitle = 'Video Project', detectedSilentGaps = [] } = req.body;
+    const {
+      audioTextHint,
+      spokenText,
+      audioStartTime = 0,
+      audioDuration,
+      language = 'en',
+      videoTitle = 'Video Project',
+      detectedSilentGaps = [],
+    } = req.body;
     const ai = getGeminiClient();
 
+    const startSec = Math.max(0, Number(audioStartTime) || 0);
+    const durSec = Math.max(2, Number(audioDuration) || (spokenText ? Math.max(3, spokenText.length * 0.12) : 15));
+    const endSec = Math.round((startSec + durSec) * 100) / 100;
+
+    // Helper to generate timed chunks from known spoken text if needed
+    const generateChunksFromText = (text: string, baseStart: number, totalDur: number) => {
+      // Split into clauses or words
+      const sentences = text.split(/(?<=[.!?,។،\n])\s+/).filter(Boolean);
+      const chunks: string[] = [];
+      for (const s of (sentences.length > 0 ? sentences : [text])) {
+        if (s.length > 35) {
+          const words = s.split(/\s+/);
+          let current = '';
+          for (const w of words) {
+            if ((current + ' ' + w).length > 25 && current) {
+              chunks.push(current.trim());
+              current = w;
+            } else {
+              current = current ? current + ' ' + w : w;
+            }
+          }
+          if (current.trim()) chunks.push(current.trim());
+        } else {
+          chunks.push(s.trim());
+        }
+      }
+
+      const validChunks = chunks.filter((c) => c.length > 0);
+      const count = Math.max(1, validChunks.length);
+      const chunkDur = totalDur / count;
+
+      return validChunks.map((chunk, i) => {
+        const cStart = Math.round((baseStart + i * chunkDur) * 100) / 100;
+        const cEnd = Math.round((baseStart + (i + 1) * chunkDur) * 100) / 100;
+        const words = chunk.split(/\s+/);
+        return {
+          id: `sub-tts-${Date.now()}-${i}`,
+          start: cStart,
+          end: cEnd,
+          text: chunk,
+          highlightWord: words[Math.floor(words.length / 2)] || chunk,
+        };
+      });
+    };
+
     if (!ai) {
+      if (spokenText && spokenText.trim()) {
+        const timedChunks = generateChunksFromText(spokenText.trim(), startSec, durSec);
+        return res.json({ success: true, subtitles: timedChunks, note: 'AI Voice synchronized subtitles generated' });
+      }
+
       // Return high quality heuristic auto-generated captions if API key is not yet set
       const fallbackSubtitles = [
-        { id: 'sub-1', start: 0.5, end: 3.2, text: language === 'km' ? 'សូមស្វាគមន៍មកកាន់ OpenCut AI Studio!' : 'Welcome to OpenCut AI Studio!' },
-        { id: 'sub-2', start: 3.5, end: 6.8, text: language === 'km' ? 'កម្មវិធីកាត់តវីដេអូកម្រិត Desktop ដូចជា CapCut' : 'The powerful desktop video editor inspired by CapCut.' },
-        { id: 'sub-3', start: 7.2, end: 10.5, text: language === 'km' ? 'កាត់ចន្លោះស្ងាត់ (Silence) និងបង្កើត Subtitle ដោយស្វ័យប្រវត្តិ' : 'Auto-cut silent gaps and generate captions in seconds.' },
-        { id: 'sub-4', start: 11.0, end: 14.5, text: language === 'km' ? 'នាំចេញវីដេអូច្បាស់កម្រិត 1080p និង 4K ដោយសេរី' : 'Export stunning high-resolution video up to 4K effortlessly.' },
+        { id: `sub-${Date.now()}-1`, start: startSec + 0.2, end: startSec + Math.min(3.2, durSec * 0.25), text: language === 'km' ? 'សូមស្វាគមន៍មកកាន់ OpenCut AI Studio!' : 'Welcome to OpenCut AI Studio!' },
+        { id: `sub-${Date.now()}-2`, start: startSec + Math.min(3.4, durSec * 0.26), end: startSec + Math.min(6.5, durSec * 0.5), text: language === 'km' ? 'កម្មវិធីកាត់តវីដេអូកម្រិត Desktop ដូចជា CapCut' : 'The powerful desktop video editor inspired by CapCut.' },
+        { id: `sub-${Date.now()}-3`, start: startSec + Math.min(6.8, durSec * 0.52), end: startSec + Math.min(10.0, durSec * 0.75), text: language === 'km' ? 'កាត់ចន្លោះស្ងាត់ (Silence) និងបង្កើត Subtitle ដោយស្វ័យប្រវត្តិ' : 'Auto-cut silent gaps and generate captions in seconds.' },
+        { id: `sub-${Date.now()}-4`, start: startSec + Math.min(10.3, durSec * 0.77), end: endSec, text: language === 'km' ? 'នាំចេញវីដេអូច្បាស់កម្រិត 1080p និង 4K ដោយសេរី' : 'Export stunning high-resolution video up to 4K effortlessly.' },
       ];
       return res.json({ success: true, subtitles: fallbackSubtitles, note: 'Default generated subtitles' });
     }
 
-    const prompt = `You are an AI Video Transcription and Auto-Caption Engine for a desktop video editor (similar to CapCut & AutoCut).
+    let prompt: string;
+    if (spokenText && spokenText.trim()) {
+      prompt = `You are an AI Video Transcription and Auto-Caption Engine for a desktop video editor (CapCut style).
+The audio clip on the timeline was generated or spoken with the following EXACT dialogue:
+"${spokenText.trim()}"
+
+Audio start timestamp on timeline: ${startSec} seconds.
+Audio duration: ${durSec} seconds (ending at ${endSec} seconds).
+Language: ${language === 'km' ? 'Khmer' : 'English'}.
+
+Task: Break this exact spoken sentence into natural, rhythmic subtitle chunks (between 2 to 6 words each) synchronized along the timeframe from ${startSec}s to ${endSec}s.
+Respond strictly with a valid JSON array of objects with the following schema:
+[
+  { "id": "string", "start": number_in_seconds, "end": number_in_seconds, "text": "exact words spoken in this segment", "highlightWord": "most impactful word" }
+]
+Important: Ensure all the spoken words from the text are included in order, start times are monotonically increasing, and timestamps fit between ${startSec} and ${endSec}. Return ONLY JSON.`;
+    } else {
+      prompt = `You are an AI Video Transcription and Auto-Caption Engine for a desktop video editor (similar to CapCut & AutoCut).
 Language requested: ${language === 'km' ? 'Khmer (and English if bilingual)' : 'English'}.
 Context/Topic: "${videoTitle}". User hint/text: "${audioTextHint || 'Create clean conversational video dialogue with timestamps'}".
+Audio start time on timeline: ${startSec}s, duration: ${durSec}s.
 Silent gaps detected in audio timeline: ${JSON.stringify(detectedSilentGaps)}.
 
 Generate a realistic, timed transcript list broken down into short, punchy subtitle chunks ideal for TikTok/YouTube shorts.
@@ -57,7 +133,8 @@ Respond strictly with a valid JSON array of objects with the following schema:
 [
   { "id": "string", "start": number_in_seconds, "end": number_in_seconds, "text": "spoken words", "highlightWord": "key emphasis word" }
 ]
-Start time should begin at ~0.5s. Keep chunks between 1.5 to 3.5 seconds each, total length around 15-20 seconds. Return ONLY JSON.`;
+Start time should begin at ~${startSec + 0.3}s and end by ~${endSec}s. Keep chunks between 1.5 to 3.5 seconds each. Return ONLY JSON.`;
+    }
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
@@ -69,14 +146,46 @@ Start time should begin at ~0.5s. Keep chunks between 1.5 to 3.5 seconds each, t
 
     const contentText = response.text || '[]';
     const parsed = JSON.parse(contentText);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return res.json({ success: true, subtitles: parsed });
+    }
+
+    if (spokenText && spokenText.trim()) {
+      const timedChunks = generateChunksFromText(spokenText.trim(), startSec, durSec);
+      return res.json({ success: true, subtitles: timedChunks });
+    }
+
     return res.json({ success: true, subtitles: parsed });
   } catch (error: any) {
     console.warn('Gemini transcript API spike, serving resilient timed captions:', error.message);
+    const spoken = req.body?.spokenText;
+    const startSec = Math.max(0, Number(req.body?.audioStartTime) || 0);
+    const durSec = Math.max(2, Number(req.body?.audioDuration) || 12);
+    const endSec = Math.round((startSec + durSec) * 100) / 100;
+
+    if (spoken && spoken.trim()) {
+      const words = spoken.trim().split(/\s+/);
+      const chunkSize = Math.max(2, Math.ceil(words.length / 4));
+      const chunks: string[] = [];
+      for (let i = 0; i < words.length; i += chunkSize) {
+        chunks.push(words.slice(i, i + chunkSize).join(' '));
+      }
+      const cDur = durSec / Math.max(1, chunks.length);
+      const fallback = chunks.map((c, i) => ({
+        id: `sub-fallback-${Date.now()}-${i}`,
+        start: Math.round((startSec + i * cDur) * 100) / 100,
+        end: Math.round((startSec + (i + 1) * cDur) * 100) / 100,
+        text: c,
+        highlightWord: c.split(' ')[0] || c,
+      }));
+      return res.json({ success: true, subtitles: fallback, note: 'Spoken text chunked successfully' });
+    }
+
     const fallbackSubtitles = [
-      { id: `sub-${Date.now()}-1`, start: 0.5, end: 3.2, text: req.body?.language === 'km' ? 'សូមស្វាគមន៍មកកាន់ OpenCut AI Studio!' : 'Welcome to OpenCut AI Studio!' },
-      { id: `sub-${Date.now()}-2`, start: 3.5, end: 6.8, text: req.body?.language === 'km' ? 'កម្មវិធីកាត់តវីដេអូកម្រិត Desktop ដូចជា CapCut' : 'The powerful desktop video editor inspired by CapCut.' },
-      { id: `sub-${Date.now()}-3`, start: 7.2, end: 10.5, text: req.body?.language === 'km' ? 'កាត់ចន្លោះស្ងាត់ (Silence) និងបង្កើត Subtitle ដោយស្វ័យប្រវត្តិ' : 'Auto-cut silent gaps and generate captions in seconds.' },
-      { id: `sub-${Date.now()}-4`, start: 11.0, end: 14.5, text: req.body?.language === 'km' ? 'នាំចេញវីដេអូច្បាស់កម្រិត 1080p និង 4K ដោយសេរី' : 'Export stunning high-resolution video up to 4K effortlessly.' },
+      { id: `sub-${Date.now()}-1`, start: startSec + 0.3, end: startSec + 3.2, text: req.body?.language === 'km' ? 'សូមស្វាគមន៍មកកាន់ OpenCut AI Studio!' : 'Welcome to OpenCut AI Studio!' },
+      { id: `sub-${Date.now()}-2`, start: startSec + 3.5, end: startSec + 6.8, text: req.body?.language === 'km' ? 'កម្មវិធីកាត់តវីដេអូកម្រិត Desktop ដូចជា CapCut' : 'The powerful desktop video editor inspired by CapCut.' },
+      { id: `sub-${Date.now()}-3`, start: startSec + 7.2, end: startSec + 10.5, text: req.body?.language === 'km' ? 'កាត់ចន្លោះស្ងាត់ (Silence) និងបង្កើត Subtitle ដោយស្វ័យប្រវត្តិ' : 'Auto-cut silent gaps and generate captions in seconds.' },
+      { id: `sub-${Date.now()}-4`, start: startSec + 10.8, end: endSec, text: req.body?.language === 'km' ? 'នាំចេញវីដេអូច្បាស់កម្រិត 1080p និង 4K ដោយសេរី' : 'Export stunning high-resolution video up to 4K effortlessly.' },
     ];
     return res.json({
       success: true,

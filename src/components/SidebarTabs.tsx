@@ -4,6 +4,7 @@ import {
   Scissors,
   Music,
   Type,
+  Sparkles,
   SlidersHorizontal,
   Layers,
   Smile,
@@ -11,7 +12,14 @@ import {
 } from 'lucide-react';
 import { Language, translations } from '../utils/i18n';
 
-export type SidebarTab = 'media' | 'autocut' | 'audio' | 'text' | 'effects' | 'transitions' | 'stickers';
+export type SidebarTab =
+  | 'media'
+  | 'autocut'
+  | 'audio'
+  | 'text'
+  | 'effects'
+  | 'transitions'
+  | 'stickers';
 
 interface SidebarTabsProps {
   activeTab: SidebarTab;
@@ -41,8 +49,8 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ activeTab, onTabChange
   ];
 
   return (
-    <nav className="w-18 bg-[#12131b] border-r border-[#20212f] flex flex-col items-center py-2 shrink-0 select-none">
-      <div className="w-full flex flex-col space-y-1">
+    <nav className="w-16 bg-[#12131b] border-r border-[#20212f] flex flex-col items-center py-1.5 shrink-0 select-none overflow-y-auto overflow-x-hidden custom-scrollbar">
+      <div className="w-full flex flex-col space-y-0.5">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -52,7 +60,7 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ activeTab, onTabChange
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`relative w-full py-2.5 px-1 flex flex-col items-center justify-center text-center transition group ${
+              className={`relative w-full py-2 px-1 flex flex-col items-center justify-center text-center transition group cursor-pointer ${
                 isActive
                   ? 'text-cyan-400 bg-[#1c1e2b]'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-[#171822]'
@@ -61,14 +69,14 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ activeTab, onTabChange
             >
               {/* Active left indicator bar */}
               {isActive && (
-                <div className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-cyan-400 rounded-r" />
+                <div className="absolute left-0 top-1 bottom-1 w-1 bg-cyan-400 rounded-r" />
               )}
 
               <div className="relative">
-                <Icon className={`w-5 h-5 transition ${isActive ? 'scale-110' : 'group-hover:scale-105'}`} />
+                <Icon className={`w-4 h-4 transition ${isActive ? 'scale-110 text-cyan-400' : 'group-hover:scale-105'}`} />
                 {tab.badge && (
                   <span
-                    className={`absolute -top-1.5 -right-3 text-[8px] font-bold px-1 py-0.2 rounded-full text-white ${
+                    className={`absolute -top-1 -right-3 text-[7.5px] font-bold px-1 py-0 rounded-full text-white ${
                       tab.badgeColor || 'bg-cyan-500'
                     }`}
                   >
@@ -77,7 +85,7 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ activeTab, onTabChange
                 )}
               </div>
 
-              <span className="text-[10px] font-medium mt-1.5 line-clamp-1 px-1 tracking-tight">
+              <span className="text-[9.5px] font-medium mt-1 line-clamp-1 px-0.5 tracking-tight leading-tight">
                 {label}
               </span>
             </button>
