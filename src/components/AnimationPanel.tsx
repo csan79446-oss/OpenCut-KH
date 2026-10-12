@@ -206,9 +206,10 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({
 
   const handleApplyPreset = (preset: PresetItem) => {
     setActivePresetId(preset.id);
+    const targetDur = preset.id === 'typewriter' ? Math.max(duration, 1.4) : duration;
     const config: AnimationConfig = {
       preset: preset.id,
-      duration,
+      duration: targetDur,
       zoomStart: 1.0,
       zoomEnd: zoomIntensity,
       typewriterSpeed,
@@ -220,8 +221,8 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({
   const handleAddSampleAnimatedText = (preset: PresetItem) => {
     const textPresets: Record<AnimationPreset, { title: string; text: string; color: string; y: number }> = {
       typewriter: {
-        title: 'Typewriter Headline',
-        text: language === 'km' ? '⌨️ ចំណងជើងវាយអក្សរ Typewriter' : '⌨️ Typing Out Captions Like CapCut',
+        title: language === 'km' ? 'ចំណងជើងវាយអក្សរ Typewriter' : 'Typewriter Headline',
+        text: language === 'km' ? '⌨️ អក្សររត់បែប Typewriter រលូនស្អាត' : '⌨️ Typing Out Captions Like CapCut',
         color: '#ffffff',
         y: 40,
       },
@@ -534,7 +535,9 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({
           <div>
             <div className="flex justify-between text-gray-300 mb-1">
               <span>{language === 'km' ? 'ល្បឿនវាយអក្សរ (Type Speed)' : 'Typing Speed (chars/s)'}</span>
-              <span className="font-mono text-cyan-400 font-bold">{typewriterSpeed} c/s</span>
+              <span className="font-mono text-cyan-400 font-bold">
+                {typewriterSpeed} {language === 'km' ? 'តួ/វិ' : 'c/s'}
+              </span>
             </div>
             <input
               type="range"

@@ -400,7 +400,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 <div className="flex justify-between text-gray-300 mb-1">
                   <span>{language === 'km' ? 'ល្បឿនវាយអក្សរ' : 'Typewriter Speed'}</span>
                   <span className="font-mono text-cyan-400 font-bold">
-                    {selectedClip.animation?.typewriterSpeed || selectedClip.textConfig?.animationConfig?.typewriterSpeed || 20} chars/s
+                    {selectedClip.animation?.typewriterSpeed || selectedClip.textConfig?.animationConfig?.typewriterSpeed || 20}{' '}
+                    {language === 'km' ? 'តួ/វិ' : 'chars/s'}
                   </span>
                 </div>
                 <input
@@ -685,23 +686,35 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               <span className="text-gray-300 block mb-1 font-medium">{t.animation}</span>
               <select
                 value={textConfig.animation}
-                onChange={(e) =>
-                  onUpdateTextConfig(selectedClip.id, { animation: e.target.value as any })
-                }
+                onChange={(e) => {
+                  const newAnim = e.target.value as any;
+                  onUpdateTextConfig(selectedClip.id, {
+                    animation: newAnim,
+                    wordStyle: newAnim === 'typewriter' ? undefined : textConfig.wordStyle,
+                    animationConfig: {
+                      ...(selectedClip.animation || textConfig.animationConfig || { preset: newAnim }),
+                      preset: newAnim,
+                    },
+                  });
+                  onUpdateClipAnimation?.(selectedClip.id, {
+                    preset: newAnim,
+                    duration: newAnim === 'typewriter' ? 1.6 : (selectedClip.animation?.duration || 0.6),
+                  });
+                }}
                 className="w-full bg-[#1b1c2b] border border-[#2b2e44] focus:border-cyan-500 rounded p-1.5 text-xs text-gray-200 cursor-pointer"
               >
-                <option value="typewriter">⌨️ Typewriter Letter-by-Letter (CapCut)</option>
-                <option value="spring-pop">⚡ Spring Pop (Elastic Damped Bounce)</option>
-                <option value="keyframe-zoom-in">🔍 Keyframe Zoom In (Ken Burns Push)</option>
-                <option value="keyframe-zoom-out">🔎 Keyframe Zoom Out (Pull Back)</option>
-                <option value="pop">💥 Pop Bounce (CapCut Viral Hook)</option>
-                <option value="bounce">🔥 Kinetic Pulse (MrBeast Style)</option>
-                <option value="slide-up">⬆️ Smooth Slide Up</option>
-                <option value="slide-left">➡️ Smooth Slide Left</option>
-                <option value="glitch">⚡ Glitch Flash Cyber</option>
-                <option value="karaoke">🎤 Karaoke Wave Glow</option>
-                <option value="fade">✨ Smooth Cinema Fade</option>
-                <option value="none">Static None</option>
+                <option value="typewriter">{language === 'km' ? '⌨️ វាយអក្សរ Typewriter (ម្ដងមួយតួ)' : '⌨️ Typewriter Letter-by-Letter (CapCut)'}</option>
+                <option value="spring-pop">{language === 'km' ? '⚡ លោតស្ទុះ Spring Pop (Elastic)' : '⚡ Spring Pop (Elastic Damped Bounce)'}</option>
+                <option value="keyframe-zoom-in">{language === 'km' ? '🔍 ពង្រីក Keyframe Zoom In' : '🔍 Keyframe Zoom In (Ken Burns Push)'}</option>
+                <option value="keyframe-zoom-out">{language === 'km' ? '🔎 បង្រួម Keyframe Zoom Out' : '🔎 Keyframe Zoom Out (Pull Back)'}</option>
+                <option value="pop">{language === 'km' ? '💥 Pop Entrance (Viral Hook)' : '💥 Pop Bounce (CapCut Viral Hook)'}</option>
+                <option value="bounce">{language === 'km' ? '🔥 ចង្វាក់រស់រវើក Kinetic Pulse' : '🔥 Kinetic Pulse (MrBeast Style)'}</option>
+                <option value="slide-up">{language === 'km' ? '⬆️ រំកិលឡើងលើ Smooth Slide Up' : '⬆️ Smooth Slide Up'}</option>
+                <option value="slide-left">{language === 'km' ? '➡️ រំកិលពីឆ្វេង Smooth Slide Left' : '➡️ Smooth Slide Left'}</option>
+                <option value="glitch">{language === 'km' ? '⚡ ភ្លឹបភ្លែត Glitch Flash Cyber' : '⚡ Glitch Flash Cyber'}</option>
+                <option value="karaoke">{language === 'km' ? '🎤 រលក Karaoke Wave Glow' : '🎤 Karaoke Wave Glow'}</option>
+                <option value="fade">{language === 'km' ? '✨ ភាពយន្តរលាយចូល Fade' : '✨ Smooth Cinema Fade'}</option>
+                <option value="none">{language === 'km' ? 'គ្មានចលនា (Static None)' : 'Static None'}</option>
               </select>
             </div>
           </div>

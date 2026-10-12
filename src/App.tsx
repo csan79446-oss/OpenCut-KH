@@ -114,11 +114,25 @@ export default function App() {
   // Playhead loop animation with requestAnimationFrame
   const lastTimeRef = useRef<number | null>(null);
   const handleFinishClipDragRef = useRef<((id: string, start: number, duration: number, trackId?: string) => void) | null>(null);
+
+  const handleTogglePlay = useCallback(() => {
+    setIsPlaying((prev) => {
+      if (!prev && currentTime >= totalDuration - 0.1) {
+        setCurrentTime(0);
+        return true;
+      }
+      return !prev;
+    });
+  }, [currentTime, totalDuration]);
+
   useEffect(() => {
+    lastTimeRef.current = null;
     let animId: number;
     const loop = (timestamp: number) => {
-      if (!lastTimeRef.current) lastTimeRef.current = timestamp;
-      const dt = (timestamp - lastTimeRef.current) / 1000;
+      if (lastTimeRef.current === null) {
+        lastTimeRef.current = timestamp;
+      }
+      const dt = Math.min((timestamp - lastTimeRef.current) / 1000, 0.1);
       lastTimeRef.current = timestamp;
 
       if (isPlaying) {
@@ -163,7 +177,7 @@ export default function App() {
       // Space: Play / Pause
       if (e.code === 'Space') {
         e.preventDefault();
-        setIsPlaying((prev) => !prev);
+        handleTogglePlay();
       }
 
       // Determine active clip to split/delete: selected clip or clip intersecting playhead (CapCut standard)
@@ -1394,7 +1408,14 @@ export default function App() {
     setClips((prev) =>
       prev.map((c) => {
         if (c.id === clipId && c.textConfig) {
-          return { ...c, textConfig: { ...c.textConfig, ...textUpdate } };
+          const updated = { ...c.textConfig, ...textUpdate };
+          if (textUpdate.animation === 'typewriter') {
+            updated.wordStyle = undefined;
+          }
+          const updatedAnim = textUpdate.animation
+            ? { ...(c.animation || { duration: 1.6 }), preset: textUpdate.animation }
+            : c.animation;
+          return { ...c, textConfig: updated, animation: updatedAnim };
         }
         return c;
       })
@@ -1416,6 +1437,7 @@ export default function App() {
               ...c.textConfig,
               animation: mergedAnim.preset,
               animationConfig: mergedAnim,
+              wordStyle: mergedAnim.preset === 'typewriter' ? undefined : c.textConfig.wordStyle,
             };
           }
           return {
@@ -1678,7 +1700,7 @@ export default function App() {
           tracks={tracks}
           selectedClipId={selectedClipId}
           mediaLibrary={mediaLibrary}
-          onTogglePlay={() => setIsPlaying((prev) => !prev)}
+          onTogglePlay={handleTogglePlay}
           onSeek={(time) => setCurrentTime(time)}
           onSplitAtPlayhead={() => {
             const targetId =
@@ -1739,7 +1761,7 @@ export default function App() {
         onCloseGaps={handleCloseTrackGaps}
         onSplitAllTracks={handleSplitAllTracks}
         isPlaying={isPlaying}
-        onTogglePlay={() => setIsPlaying((prev) => !prev)}
+        onTogglePlay={handleTogglePlay}
         language={language}
       />
 

@@ -412,27 +412,8 @@ export const Timeline: React.FC<TimelineProps> = ({
     <div className="h-60 sm:h-64 bg-[#10111a] border-t border-[#20212f] flex flex-col select-none relative">
       {/* 1. Timeline Toolbar with OpenShot / CapCut Sleek Actions */}
       <div className="h-9 bg-[#12131d] border-b border-[#212334] px-3 flex items-center justify-between z-20 shrink-0">
-        {/* Left tools: Play / Pause + Tool Mode (Select/Razor) + Split Options + Delete + Auto-Connect */}
+        {/* Left tools: Tool Mode (Select/Razor) + Split Options + Delete + Auto-Connect */}
         <div className="flex items-center space-x-1.5 flex-wrap">
-          {/* Quick Timeline Play / Pause Button */}
-          {onTogglePlay && (
-            <button
-              onClick={onTogglePlay}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-bold transition cursor-pointer shadow-sm mr-1 ${
-                isPlaying
-                  ? 'bg-cyan-500 hover:bg-cyan-400 text-black'
-                  : 'bg-[#1c1e2d] hover:bg-[#27293e] text-white border border-[#2b2d42]'
-              }`}
-              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-            >
-              {isPlaying ? (
-                <Pause className="w-3.5 h-3.5 fill-current" />
-              ) : (
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-              )}
-              <span>{isPlaying ? 'Pause' : 'Play'}</span>
-            </button>
-          )}
 
           {/* OpenShot / Premiere Tool Mode: Select (V) vs Razor Cut (C) */}
           <div className="flex items-center bg-[#161825] border border-[#27293d] rounded p-0.5 space-x-0.5 mr-1">

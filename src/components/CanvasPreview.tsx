@@ -345,25 +345,6 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
             }}
           />
 
-          {/* Canvas Bottom-Center Quick Play/Pause Badge Overlay */}
-          {!isPlaying && !activeSelectedClip && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onTogglePlay();
-              }}
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-black/75 hover:bg-black/90 text-white border border-white/20 backdrop-blur-md shadow-xl transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer z-15 group"
-              title="Play (Space)"
-            >
-              <div className="w-5 h-5 rounded-full bg-cyan-500 text-black flex items-center justify-center shadow-sm">
-                <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
-              </div>
-              <span className="text-[11px] font-medium text-gray-200 group-hover:text-cyan-300">
-                {language === 'km' ? 'ចាក់វីដេអូ' : 'Play'}
-              </span>
-            </button>
-          )}
-
           {/* On-Canvas Transform Gizmo (OpenReel feature) */}
           {activeSelectedClip && gizmoBox && (
             <div
@@ -461,21 +442,21 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
       </div>
 
       {/* Transport & Playback Control Bar (OpenReel & OpenShot) */}
-      <div className="relative h-12 bg-[#10111a] border-t border-[#1e202d] px-3.5 flex items-center justify-between z-20 shrink-0">
+      <div className="relative h-12 bg-[#10111a] border-t border-[#1e202d] px-2 sm:px-3.5 flex items-center justify-between z-20 shrink-0">
         {/* Left: SMPTE Timecode Display & Quick Split */}
-        <div className="flex items-center space-x-2 font-mono tabular-nums text-xs z-10">
-          <span className="text-cyan-400 font-bold bg-[#151724] px-2 py-0.5 rounded border border-[#23263a]">
+        <div className="flex items-center space-x-1.5 font-mono tabular-nums text-xs z-10 max-w-[32%] sm:max-w-none overflow-hidden text-ellipsis whitespace-nowrap">
+          <span className="text-cyan-400 font-bold bg-[#151724] px-1.5 py-0.5 rounded border border-[#23263a] text-[10.5px] sm:text-xs">
             {formatTimecode(currentTime)}
           </span>
-          <span className="text-gray-600">/</span>
-          <span className="text-gray-400 text-[11px]">{formatTimecode(totalDuration)}</span>
+          <span className="text-gray-600 hidden xs:inline">/</span>
+          <span className="text-gray-400 text-[10px] sm:text-[11px] hidden xs:inline">{formatTimecode(totalDuration)}</span>
           
-          <div className="h-3.5 w-px bg-[#202334] mx-1 hidden sm:block" />
+          <div className="h-3.5 w-px bg-[#202334] mx-1 hidden lg:block" />
           
           {/* Quick Split at Playhead */}
           <button
             onClick={onSplitAtPlayhead}
-            className="hidden sm:flex items-center space-x-1 px-2 py-1 rounded bg-[#171825] hover:bg-[#202336] text-gray-300 hover:text-cyan-300 border border-[#25273b] text-xs font-sans font-medium transition cursor-pointer active:scale-95"
+            className="hidden lg:flex items-center space-x-1 px-2 py-1 rounded bg-[#171825] hover:bg-[#202336] text-gray-300 hover:text-cyan-300 border border-[#25273b] text-xs font-sans font-medium transition cursor-pointer active:scale-95"
             title="Split Clip at Playhead (C)"
           >
             <Scissors className="w-3 h-3 text-cyan-400" />
@@ -484,11 +465,11 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         </div>
 
         {/* Center: Play / Pause Button & Transport Stepping (Centered Exactly at Bottom of Video Preview) */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center space-x-1.5 pointer-events-auto">
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center space-x-1 sm:space-x-1.5 z-30 pointer-events-auto">
           {/* Step Back 1s */}
           <button
             onClick={() => handleStepSeconds(-1)}
-            className="p-1.5 rounded hover:bg-[#1a1c29] text-gray-400 hover:text-white transition cursor-pointer"
+            className="hidden md:flex p-1.5 rounded hover:bg-[#1a1c29] text-gray-400 hover:text-white transition cursor-pointer"
             title="Step Back 1s"
           >
             <SkipBack className="w-3.5 h-3.5" />
@@ -497,7 +478,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           {/* Frame Step Back -1f (OpenReel / OpenShot J key) */}
           <button
             onClick={() => handleStepFrames(-1)}
-            className="px-2 py-1 rounded bg-[#161723] hover:bg-[#202232] text-gray-300 hover:text-white border border-[#252739] text-[10.5px] font-mono tabular-nums transition cursor-pointer"
+            className="hidden sm:flex px-1.5 py-1 rounded bg-[#161723] hover:bg-[#202232] text-gray-300 hover:text-white border border-[#252739] text-[10.5px] font-mono tabular-nums transition cursor-pointer"
             title={t.stepPrevFrame}
           >
             -1f
@@ -505,25 +486,29 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
 
           {/* Main Play / Pause Primary Button - Centered */}
           <button
-            onClick={onTogglePlay}
-            className={`w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-all duration-150 cursor-pointer mx-1 active:scale-95 ${
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePlay();
+            }}
+            className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full flex items-center justify-center shadow-lg transition-all duration-150 cursor-pointer active:scale-95 touch-manipulation z-30 ${
               isPlaying
-                ? 'bg-amber-400 hover:bg-amber-300 text-black shadow-amber-500/25 ring-2 ring-amber-400/40'
-                : 'bg-cyan-500 hover:bg-cyan-400 text-black shadow-cyan-500/30 hover:scale-105 ring-2 ring-cyan-400/40'
+                ? 'bg-amber-400 hover:bg-amber-300 text-black shadow-amber-500/25 ring-2 ring-amber-400/50'
+                : 'bg-cyan-500 hover:bg-cyan-400 text-black shadow-cyan-500/35 hover:scale-105 ring-2 ring-cyan-400/50'
             }`}
             title={isPlaying ? 'Pause (Space / K)' : 'Play (Space / K)'}
           >
             {isPlaying ? (
-              <Pause className="w-4 h-4 fill-current" />
+              <Pause className="w-5 h-5 fill-current" />
             ) : (
-              <Play className="w-4 h-4 fill-current ml-0.5" />
+              <Play className="w-5 h-5 fill-current ml-0.5" />
             )}
           </button>
 
           {/* Frame Step Forward +1f (OpenReel / OpenShot L key) */}
           <button
             onClick={() => handleStepFrames(1)}
-            className="px-2 py-1 rounded bg-[#161723] hover:bg-[#202232] text-gray-300 hover:text-white border border-[#252739] text-[10.5px] font-mono tabular-nums transition cursor-pointer"
+            className="hidden sm:flex px-1.5 py-1 rounded bg-[#161723] hover:bg-[#202232] text-gray-300 hover:text-white border border-[#252739] text-[10.5px] font-mono tabular-nums transition cursor-pointer"
             title={t.stepNextFrame}
           >
             +1f
@@ -532,7 +517,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           {/* Step Forward 1s */}
           <button
             onClick={() => handleStepSeconds(1)}
-            className="p-1.5 rounded hover:bg-[#1a1c29] text-gray-400 hover:text-white transition cursor-pointer"
+            className="hidden md:flex p-1.5 rounded hover:bg-[#1a1c29] text-gray-400 hover:text-white transition cursor-pointer"
             title="Step Forward 1s"
           >
             <SkipForward className="w-3.5 h-3.5" />
@@ -540,12 +525,12 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         </div>
 
         {/* Right: Preview Audio, Speed & Fullscreen */}
-        <div className="flex items-center space-x-2 z-10">
+        <div className="flex items-center space-x-1 sm:space-x-2 z-10 shrink-0">
           {/* Speed Selector */}
           <select
             value={speedMultiplier}
             onChange={(e) => setSpeedMultiplier(parseFloat(e.target.value))}
-            className="bg-[#141522] text-gray-300 text-[11px] px-2 py-0.5 rounded border border-[#232537] focus:outline-none cursor-pointer"
+            className="hidden sm:block bg-[#141522] text-gray-300 text-[11px] px-1.5 py-0.5 rounded border border-[#232537] focus:outline-none cursor-pointer"
             title="Preview Speed"
           >
             <option value={0.5}>0.5×</option>

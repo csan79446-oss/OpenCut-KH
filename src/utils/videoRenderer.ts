@@ -65,6 +65,83 @@ export function tokenizeTextIntoWords(text: string): string[] {
 }
 
 /**
+ * Split text into user-perceived grapheme clusters.
+ * Crucial for Khmer script: keeps base consonant + subscript coeng + vowels + diacritics
+ * together as one single complete visual glyph so typewriter animation never breaks clusters
+ * or renders orphan dotted circles (◌្ / ◌ា).
+ */
+export function splitIntoGraphemes(text: string): string[] {
+  if (!text) return [];
+  if (typeof Intl !== 'undefined' && (Intl as any).Segmenter) {
+    try {
+      const segmenter = new (Intl as any).Segmenter(['km', 'en'], { granularity: 'grapheme' });
+      return Array.from(segmenter.segment(text)).map((s: any) => s.segment);
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Regex fallback matching Khmer orthographic syllable clusters and individual non-Khmer units
+  const clusterRegex =
+    /(?:[\u1780-\u17B3]|[\u17A3-\u17D3])(?:\u17D2[\u1780-\u17B3])*(?:[\u17B6-\u17D3\u17DD])*|[\s\S]/gu;
+  const matches = text.match(clusterRegex);
+  return matches || Array.from(text);
+}
+
+/**
+ * Word and syllable aware line wrapping for Canvas 2D.
+ * Supports Khmer (which has no inter-word spaces) by segmenting on natural word boundaries,
+ * as well as space-delimited Latin languages.
+ */
+export function wrapCanvasText(
+  text: string,
+  measureWidth: (str: string) => number,
+  maxWidth: number
+): string[] {
+  if (!text) return [];
+  const paragraphs = text.split('\n');
+  const allLines: string[] = [];
+
+  for (const para of paragraphs) {
+    if (!para.trim()) {
+      allLines.push('');
+      continue;
+    }
+
+    let units: string[] = [];
+    if (typeof Intl !== 'undefined' && (Intl as any).Segmenter) {
+      try {
+        const seg = new (Intl as any).Segmenter(['km', 'en'], { granularity: 'word' });
+        units = Array.from(seg.segment(para)).map((s: any) => s.segment);
+      } catch {
+        units = [];
+      }
+    }
+
+    if (units.length === 0) {
+      units = para.split(/(\s+)/).filter(Boolean);
+    }
+
+    let currentLine = '';
+
+    for (const unit of units) {
+      const candidate = currentLine + unit;
+      if (measureWidth(candidate) > maxWidth && currentLine.trim().length > 0) {
+        allLines.push(currentLine.trimEnd());
+        currentLine = unit.startsWith(' ') ? unit.trimStart() : unit;
+      } else {
+        currentLine = candidate;
+      }
+    }
+    if (currentLine.trim().length > 0) {
+      allLines.push(currentLine.trimEnd());
+    }
+  }
+
+  return allLines.length > 0 ? allLines : [text];
+}
+
+/**
  * Render all active clips at a specific playhead time to a Canvas 2D context
  */
 export function renderCanvasFrame(
@@ -264,8 +341,9 @@ export function renderCanvasFrame(
       let textScale = 1;
       let alphaMultiplier = 1;
 
-      const animType = cfg.animation;
-      const animConfig = cfg.animationConfig;
+      const animType = cfg.animation || clip.animation?.preset;
+      const animConfig = cfg.animationConfig || clip.animation;
+      const isTypewriter = animType === 'typewriter';
 
       if (animType === 'spring-pop' || animType === 'pop') {
         const dur = animConfig?.duration || 0.55;
@@ -324,21 +402,24 @@ export function renderCanvasFrame(
       ctx.globalAlpha *= Math.max(0, Math.min(1, alphaMultiplier));
       ctx.scale(textScale, textScale);
 
-      ctx.font = `bold ${cfg.fontSize}px "${cfg.fontFamily || 'Inter'}", -apple-system, sans-serif`;
+      const isKhmer = /[\u1780-\u17FF]/.test(cfg.text);
+      const chosenFont = cfg.fontFamily || (isKhmer ? 'Kantumruy Pro' : 'Inter');
+      ctx.font = `bold ${cfg.fontSize}px "${chosenFont}", "Kantumruy Pro", "Inter", -apple-system, sans-serif`;
       ctx.textBaseline = 'middle';
 
       const maxLineWidth = width * 0.86;
       const lineHeight = cfg.fontSize * 1.35;
 
-      // Check if word-level synchronization is enabled
+      // Check if word-level synchronization is enabled (Typewriter animation takes absolute precedence)
       const isWordMode =
-        cfg.wordStyle === 'word-by-word' ||
-        cfg.wordStyle === 'word-highlight' ||
-        cfg.wordStyle === 'word-bounce' ||
-        cfg.wordStyle === 'karaoke' ||
-        cfg.animation === 'word-by-word' ||
-        cfg.animation === 'word-highlight' ||
-        cfg.animation === 'word-bounce';
+        !isTypewriter &&
+        (cfg.wordStyle === 'word-by-word' ||
+          cfg.wordStyle === 'word-highlight' ||
+          cfg.wordStyle === 'word-bounce' ||
+          cfg.wordStyle === 'karaoke' ||
+          animType === 'word-by-word' ||
+          animType === 'word-highlight' ||
+          animType === 'word-bounce');
 
       const effectiveWordMode =
         cfg.wordStyle ||
@@ -502,35 +583,39 @@ export function renderCanvasFrame(
           });
         });
       } else {
-        // --- 2. CLASSIC WHOLE-LINE RENDERING ---
+        // --- 2. CLASSIC WHOLE-LINE & TYPEWRITER RENDERING ---
         let textToRender = cfg.text;
-        if (cfg.animation === 'typewriter') {
-          const speed = cfg.animationConfig?.typewriterSpeed || 18;
-          const typingDur = cfg.animationConfig?.duration || Math.max(0.6, cfg.text.length / speed);
+        let isCursorActive = false;
+
+        if (isTypewriter) {
+          const speed = animConfig?.typewriterSpeed || 18;
+          const graphemes = splitIntoGraphemes(cfg.text);
+          const totalUnits = Math.max(1, graphemes.length);
+          // Typing duration: either explicitly configured or dynamically calculated from grapheme count and speed
+          const typingDur = animConfig?.duration || Math.max(0.6, totalUnits / speed);
           const tProgress = Math.min(1, Math.max(0, clipAge / typingDur));
-          const charsCount = Math.max(1, Math.floor(tProgress * cfg.text.length));
-          textToRender = cfg.text.slice(0, charsCount);
-          if (tProgress < 1 && Math.floor(clipAge * 4) % 2 === 0) {
-            textToRender += ' |';
+          const unitsToShow = Math.max(1, Math.min(totalUnits, Math.floor(tProgress * totalUnits)));
+          textToRender = graphemes.slice(0, unitsToShow).join('');
+
+          // Blinking cursor ▎ during typing, blinking at 3.5Hz
+          if (tProgress < 1) {
+            isCursorActive = Math.floor(clipAge * 3.5) % 2 === 0;
           }
         }
 
         ctx.textAlign = (cfg.align as CanvasTextAlign) || 'center';
 
-        const words = textToRender.split(' ');
-        const lines: string[] = [];
-        let currentLine = '';
+        // Word and syllable aware line wrapping for Canvas (protects Khmer continuous text from overflowing)
+        const lines = wrapCanvasText(
+          textToRender,
+          (str) => ctx.measureText(str).width,
+          maxLineWidth
+        );
 
-        for (const w of words) {
-          const testLine = currentLine ? `${currentLine} ${w}` : w;
-          if (ctx.measureText(testLine).width > maxLineWidth && currentLine) {
-            lines.push(currentLine);
-            currentLine = w;
-          } else {
-            currentLine = testLine;
-          }
+        // Append blinking cursor to the end of the last line during active typing
+        if (isCursorActive && lines.length > 0) {
+          lines[lines.length - 1] += ' ▎';
         }
-        if (currentLine) lines.push(currentLine);
 
         const totalBlockHeight = lines.length * lineHeight;
 
@@ -538,7 +623,12 @@ export function renderCanvasFrame(
           const maxMeasuredWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
           const paddingX = 20;
           const paddingY = 10;
-          const pillX = -maxMeasuredWidth / 2 - paddingX;
+          const pillX =
+            cfg.align === 'left'
+              ? -maxLineWidth / 2 - paddingX
+              : cfg.align === 'right'
+              ? maxLineWidth / 2 - maxMeasuredWidth - paddingX
+              : -maxMeasuredWidth / 2 - paddingX;
           const pillY = textOffsetY - totalBlockHeight / 2 - paddingY / 2;
           const pillW = maxMeasuredWidth + paddingX * 2;
           const pillH = totalBlockHeight + paddingY;
@@ -552,6 +642,12 @@ export function renderCanvasFrame(
 
         lines.forEach((line, lineIdx) => {
           const lineY = textOffsetY - totalBlockHeight / 2 + (lineIdx + 0.5) * lineHeight;
+          const lineX =
+            cfg.align === 'left'
+              ? -maxLineWidth / 2
+              : cfg.align === 'right'
+              ? maxLineWidth / 2
+              : 0;
 
           if (cfg.shadowColor || cfg.shadowBlur) {
             ctx.shadowColor = cfg.shadowColor || 'rgba(0,0,0,0.85)';
@@ -567,11 +663,11 @@ export function renderCanvasFrame(
             ctx.strokeStyle = cfg.strokeColor;
             ctx.lineWidth = cfg.strokeWidth;
             ctx.lineJoin = 'round';
-            ctx.strokeText(line, 0, lineY);
+            ctx.strokeText(line, lineX, lineY);
           }
 
           ctx.fillStyle = cfg.color || '#ffffff';
-          ctx.fillText(line, 0, lineY);
+          ctx.fillText(line, lineX, lineY);
         });
       }
 
