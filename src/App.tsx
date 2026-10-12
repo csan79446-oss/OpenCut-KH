@@ -1594,6 +1594,7 @@ export default function App() {
             <AutoCutPanel
               clips={clips}
               selectedClipId={selectedClipId}
+              currentTime={currentTime}
               onAutoCutSilence={handleAutoCutSilence}
               onCutSpecificInterval={handleCutSpecificInterval}
               onSeekToTime={(time) => setCurrentTime(time)}
@@ -1685,6 +1686,7 @@ export default function App() {
               clips.find((c) => currentTime >= c.start && currentTime <= c.start + c.duration)?.id;
             if (targetId) handleSplitClip(targetId, currentTime);
           }}
+          onUpdateClipTransform={handleUpdateClipTransform}
           language={language}
         />
 

@@ -99,6 +99,29 @@ export const translations = {
     textColor: 'Color',
     animation: 'Animation',
     
+    // Tools & Canvas Viewport (OpenReel & OpenShot)
+    toolSelect: 'Selection Tool (V)',
+    toolRazor: 'Razor Cut Tool (C)',
+    safeArea: 'Safe Area Guides',
+    tiktokSafeZone: 'TikTok & Reels UI Bounds',
+    actionSafe: 'Action Safe (90%)',
+    stepPrevFrame: 'Prev Frame (-1f / J)',
+    stepNextFrame: 'Next Frame (+1f / L)',
+    canvasTransform: 'Canvas Transform Gizmo',
+    canvasZoom: 'Zoom Viewport',
+    fitToScreen: 'Fit Viewport',
+
+    // OpenChatCut Features
+    openChatCut: 'OpenChatCut AI Editor',
+    chatCutPromptPlaceholder: 'e.g. Cut dead air, add dynamic yellow subtitles, highlight hook...',
+    runAiCommand: 'Execute Prompt',
+    interactiveTranscript: 'Transcript-Based Video Cut',
+    clickToSeek: 'Click words to seek · Delete to ripple cut',
+    cutWord: 'Cut this phrase from timeline',
+    strikethroughCut: 'Strikethrough / Cut',
+    savedDuration: 'Time saved by silence removal',
+    quickCommands: 'Quick AI Actions',
+
     // Timeline
     tracks: 'Tracks',
     addTrack: 'Add Track',
@@ -229,6 +252,29 @@ export const translations = {
     textColor: 'ពណ៌អក្សរ',
     animation: 'ចលនាអក្សរ',
     
+    // Tools & Canvas Viewport (OpenReel & OpenShot)
+    toolSelect: 'ឧបករណ៍ជ្រើសរើសទូទៅ (V)',
+    toolRazor: 'ឧបករណ៍កន្ត្រៃកាត់ផ្ទាល់ (C)',
+    safeArea: 'បន្ទាត់សុវត្ថិភាពទូរស័ព្ទ',
+    tiktokSafeZone: 'ព្រំដែនអេក្រង់ TikTok & Reels',
+    actionSafe: 'បន្ទាត់ Action Safe (90%)',
+    stepPrevFrame: 'ថយក្រោយ 1 ហ្វ្រេម (-1f / J)',
+    stepNextFrame: 'ទៅមុខ 1 ហ្វ្រេម (+1f / L)',
+    canvasTransform: 'ឧបករណ៍ទាញប្តូរទីតាំងលើ Canvas',
+    canvasZoom: 'ពង្រីក/បង្រួម Viewport',
+    fitToScreen: 'សម្រួលពេញអេក្រង់ (Fit)',
+
+    // OpenChatCut Features
+    openChatCut: 'ជំនួយការកាត់ត OpenChatCut AI',
+    chatCutPromptPlaceholder: 'ឧ. កាត់ចន្លោះស្ងាត់, បន្ថែម subtitle លឿង, រំលេច hook...',
+    runAiCommand: 'ប្រតិបត្តិការ Prompt',
+    interactiveTranscript: 'កាត់តវីដេអូតាមអត្ថបទសំឡេង',
+    clickToSeek: 'ចុចពាក្យដើម្បីលោតក្បាលចាក់ · លុបពាក្យដើម្បីកាត់វីដេអូ',
+    cutWord: 'កាត់ឃ្លានេះចេញពី Timeline',
+    strikethroughCut: 'គូសឆូត / កាត់ចោល',
+    savedDuration: 'ពេលវេលាសន្សំបានពីការកាត់ស្ងាត់',
+    quickCommands: 'ពាក្យបញ្ជា AI រហ័ស',
+
     // Timeline
     tracks: 'ជួរកាត់ត (Tracks)',
     addTrack: 'បន្ថែម Track',

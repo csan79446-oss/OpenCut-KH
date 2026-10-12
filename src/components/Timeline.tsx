@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
   Scissors,
+  MousePointer,
   Trash2,
   Copy,
   Magnet,
@@ -129,7 +130,9 @@ export const Timeline: React.FC<TimelineProps> = ({
 }) => {
   const t = translations[language];
   const [zoom, setZoom] = useState<number>(45); // pixels per second
-  const [trackHeight, setTrackHeight] = useState<number>(18); // ultra-slim tracks (18px default)
+  const [trackHeight, setTrackHeight] = useState<number>(34); // Standard NLE track height (34px default)
+  const [activeTool, setActiveTool] = useState<'select' | 'razor'>('select'); // OpenShot style Select vs Razor tool
+  const [razorHoverX, setRazorHoverX] = useState<number | null>(null);
   const [isSnapping, setIsSnapping] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDraggingPlayhead = useRef<boolean>(false);
@@ -406,10 +409,10 @@ export const Timeline: React.FC<TimelineProps> = ({
   const canSplit = Boolean(activeClip);
 
   return (
-    <div className="h-44 bg-[#10111a] border-t border-[#20212f] flex flex-col select-none relative">
-      {/* 1. Timeline Toolbar with CapCut Sleek Actions */}
+    <div className="h-60 sm:h-64 bg-[#10111a] border-t border-[#20212f] flex flex-col select-none relative">
+      {/* 1. Timeline Toolbar with OpenShot / CapCut Sleek Actions */}
       <div className="h-9 bg-[#12131d] border-b border-[#212334] px-3 flex items-center justify-between z-20 shrink-0">
-        {/* Left tools: Play / Pause + CapCut Split Options + Delete + Auto-Connect */}
+        {/* Left tools: Play / Pause + Tool Mode (Select/Razor) + Split Options + Delete + Auto-Connect */}
         <div className="flex items-center space-x-1.5 flex-wrap">
           {/* Quick Timeline Play / Pause Button */}
           {onTogglePlay && (
@@ -430,6 +433,35 @@ export const Timeline: React.FC<TimelineProps> = ({
               <span>{isPlaying ? 'Pause' : 'Play'}</span>
             </button>
           )}
+
+          {/* OpenShot / Premiere Tool Mode: Select (V) vs Razor Cut (C) */}
+          <div className="flex items-center bg-[#161825] border border-[#27293d] rounded p-0.5 space-x-0.5 mr-1">
+            <button
+              onClick={() => setActiveTool('select')}
+              className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-semibold transition cursor-pointer ${
+                activeTool === 'select'
+                  ? 'bg-cyan-500 text-black shadow-sm font-bold'
+                  : 'text-gray-400 hover:text-white hover:bg-[#222436]'
+              }`}
+              title={t.toolSelect}
+            >
+              <MousePointer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline font-mono">V</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTool('razor')}
+              className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-semibold transition cursor-pointer ${
+                activeTool === 'razor'
+                  ? 'bg-rose-500 text-white shadow-sm font-bold'
+                  : 'text-gray-400 hover:text-white hover:bg-[#222436]'
+              }`}
+              title={t.toolRazor}
+            >
+              <Scissors className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline font-mono">C</span>
+            </button>
+          </div>
 
           {/* CapCut Split Action 1: Split at playhead (Ctrl+B / C) */}
           <button
@@ -591,10 +623,9 @@ export const Timeline: React.FC<TimelineProps> = ({
             </span>
             <div className="flex items-center bg-[#161825] border border-[#27293d] rounded p-0.5 space-x-0.5">
               {[
-                { label: language === 'km' ? 'តូចបំផុត (14px)' : 'Nano (14px)', val: 14 },
-                { label: language === 'km' ? 'ស្លីម (18px)' : 'Slim (18px)', val: 18 },
-                { label: language === 'km' ? 'តូច (22px)' : 'Compact (22px)', val: 22 },
-                { label: language === 'km' ? 'មធ្យម (28px)' : 'Medium (28px)', val: 28 },
+                { label: language === 'km' ? 'បង្រួម (22px)' : 'Compact (22px)', val: 22 },
+                { label: language === 'km' ? 'ស្តង់ដារ (34px)' : 'Standard (34px)', val: 34 },
+                { label: language === 'km' ? 'ពង្រីក (48px)' : 'Expanded (48px)', val: 48 },
               ].map((preset) => (
                 <button
                   key={preset.val}
@@ -907,8 +938,20 @@ export const Timeline: React.FC<TimelineProps> = ({
 
         {/* Scrollable Timeline Area */}
         <div
-          className="flex-1 relative flex flex-col"
+          className={`flex-1 relative flex flex-col ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
           style={{ width: `${timelineWidth}px`, minWidth: `${timelineWidth}px` }}
+          onMouseMove={(e) => {
+            if (activeTool === 'razor') {
+              if (!containerRef.current) return;
+              const rect = containerRef.current.getBoundingClientRect();
+              const trackHeaderWidth = 256;
+              const x = e.clientX - rect.left + containerRef.current.scrollLeft - trackHeaderWidth;
+              setRazorHoverX(Math.max(0, x));
+            } else if (razorHoverX !== null) {
+              setRazorHoverX(null);
+            }
+          }}
+          onMouseLeave={() => setRazorHoverX(null)}
         >
           {/* 1. Timecode Ruler */}
           <div
@@ -933,6 +976,21 @@ export const Timeline: React.FC<TimelineProps> = ({
 
           {/* 2. Track Lanes with Clips */}
           <div className="flex-1 relative flex flex-col">
+            {/* OpenShot Style Razor Cut Guide Line */}
+            {activeTool === 'razor' && razorHoverX !== null && (
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-rose-500 shadow-[0_0_10px_#f43f5e] z-50 pointer-events-none"
+                style={{ left: `${razorHoverX}px` }}
+              >
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-rose-600 text-white p-0.5 rounded shadow">
+                  <Scissors className="w-3 h-3" />
+                </div>
+                <div className="absolute top-6 left-2 bg-black/90 text-rose-300 font-mono text-[9px] px-1.5 py-0.5 rounded border border-rose-500/40 whitespace-nowrap">
+                  {(razorHoverX / zoom).toFixed(2)}s
+                </div>
+              </div>
+            )}
+
             {/* Global Magnetic Snap Line across tracks */}
             {dragState && dragState.snapGuideX !== undefined && (
               <div
@@ -1018,6 +1076,18 @@ export const Timeline: React.FC<TimelineProps> = ({
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (activeTool === 'razor') {
+                              if (!containerRef.current) return;
+                              const rect = containerRef.current.getBoundingClientRect();
+                              const trackHeaderWidth = 256;
+                              const clickX = e.clientX - rect.left + containerRef.current.scrollLeft - trackHeaderWidth;
+                              const splitTime = Math.max(0.1, clickX / zoom);
+                              if (splitTime > clip.start + 0.15 && splitTime < clip.start + clip.duration - 0.15) {
+                                onSplitClip(clip.id, Math.round(splitTime * 100) / 100);
+                                onSeek(Math.round(splitTime * 100) / 100);
+                              }
+                              return;
+                            }
                             onSelectClip(clip.id);
                             if (!hasDraggedRef.current) {
                               updateTimeFromEvent(e);
@@ -1025,16 +1095,21 @@ export const Timeline: React.FC<TimelineProps> = ({
                           }}
                           onMouseDown={(e) => {
                             e.stopPropagation();
+                            if (activeTool === 'razor') {
+                              return;
+                            }
                             onSelectClip(clip.id);
                             startClipDrag(e, clip, 'move');
                           }}
                           onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
-                          title={language === 'km' ? 'អូសទៅឆ្វេង ឬស្ដាំ ដើម្បីប្ដូរទីតាំងលើ Track' : 'Drag left or right on track'}
+                          title={activeTool === 'razor' ? (language === 'km' ? 'ចុចដើម្បីកាត់ Clip ត្រង់ចំណុចនេះ' : 'Click to cut clip at this position') : (language === 'km' ? 'អូសទៅឆ្វេង ឬស្ដាំ ដើម្បីប្ដូរទីតាំងលើ Track' : 'Drag left or right on track')}
                           className={`absolute top-[1px] bottom-[1px] rounded-[3px] flex items-center px-1 shadow-sm transition-shadow group select-none ${
                             isBeingDragged
                               ? 'overflow-visible ring-2 ring-cyan-300 shadow-2xl shadow-cyan-950 z-50 scale-[1.02] opacity-95 cursor-grabbing brightness-110'
                               : isSelected
                               ? 'overflow-hidden ring-1.5 ring-cyan-400 shadow-md shadow-cyan-900/50 z-10 brightness-110 cursor-grab'
+                              : activeTool === 'razor'
+                              ? 'overflow-hidden hover:brightness-125 cursor-crosshair'
                               : 'overflow-hidden hover:brightness-105 cursor-grab'
                           } ${track.isLocked ? 'cursor-not-allowed opacity-90' : ''}`}
                           style={{
